@@ -671,6 +671,10 @@ async def system():
     binance = await _binance_probe()
     api_ms = round((time.perf_counter() - t_api) * 1000, 1)
     with db() as c:
+        from .prospect.schema import ensure_prospect_schema
+        from .prospect.decisions import decision_counts as prospect_decision_counts
+
+        ensure_prospect_schema(c.execute)
         engine = c.execute("SELECT * FROM engine_state WHERE id=1").fetchone()
         last_scan = c.execute(
             "SELECT * FROM scans ORDER BY id DESC LIMIT 1"
@@ -697,9 +701,38 @@ async def system():
             "prices": c.execute("SELECT COUNT(*) AS n FROM prices").fetchone()["n"],
             "scans": c.execute("SELECT COUNT(*) AS n FROM scans").fetchone()["n"],
         }
+        sched = c.execute(
+            "SELECT * FROM shadow_scheduler_state WHERE id=1"
+        ).fetchone()
+        last_pred = c.execute(
+            """SELECT MAX(d.created_at) AS at FROM prospect_decisions d
+               JOIN prospect_experiments e ON e.id=d.experiment_id
+               WHERE e.experiment_type='SHADOW_LIVE'"""
+        ).fetchone()
+        last_res = c.execute(
+            "SELECT MAX(resolved_at) AS at FROM prospect_outcomes"
+        ).fetchone()
+        prospect_counts = prospect_decision_counts(c.execute, "SHADOW_LIVE")
+        prospect_open_alerts = c.execute(
+            "SELECT COUNT(*) AS n FROM prospect_alerts WHERE status='OPEN'"
+        ).fetchone()["n"]
+        recent_cycles = list(
+            c.execute(
+                """SELECT id, started_at, finished_at, ok, decisions_new, resolved, invalid, error
+                   FROM shadow_scheduler_cycles ORDER BY id DESC LIMIT 10"""
+            )
+        )
 
     scan_age = _age_seconds(last_scan["at"] if last_scan else None)
     price_age_s = _age_seconds(price_age["at"] if price_age else None)
+    hb_age = _age_seconds(sched["heartbeat_at"] if sched else None)
+    # Evidence-based: container up ≠ healthy. Heartbeat must be fresh.
+    if not sched or not sched.get("heartbeat_at"):
+        sched_status = "UNKNOWN"
+    elif sched.get("status") == "ERROR":
+        sched_status = "ERROR"
+    else:
+        sched_status = _status_from_age(hb_age, 600, 900)
     components = {
         "fastapi": {
             "status": "OK",
@@ -736,6 +769,30 @@ async def system():
             "status": "WARNING" if engine and engine["paused"] else "OK",
             "evidence": serial(engine),
         },
+        "shadow_scheduler": {
+            "status": sched_status,
+            "evidence": {
+                "db_status": sched.get("status") if sched else None,
+                "heartbeat_at": serial(sched["heartbeat_at"]) if sched and sched.get("heartbeat_at") else None,
+                "heartbeat_age_s": hb_age,
+                "last_cycle_at": serial(sched["last_cycle_at"]) if sched and sched.get("last_cycle_at") else None,
+                "last_cycle_ok": sched.get("last_cycle_ok") if sched else None,
+                "last_inference_at": serial(sched["last_inference_at"]) if sched and sched.get("last_inference_at") else None,
+                "last_resolve_at": serial(sched["last_resolve_at"]) if sched and sched.get("last_resolve_at") else None,
+                "last_prediction_at": serial(last_pred["at"]) if last_pred and last_pred.get("at") else None,
+                "last_outcome_at": serial(last_res["at"]) if last_res and last_res.get("at") else None,
+                "pending": prospect_counts.get("PENDING"),
+                "resolved": prospect_counts.get("RESOLVED"),
+                "invalid": prospect_counts.get("INVALID"),
+                "inference_errors": sched.get("inference_errors") if sched else None,
+                "resolve_errors": sched.get("resolve_errors") if sched else None,
+                "connection_errors": sched.get("connection_errors") if sched else None,
+                "active_model_version": sched.get("active_model_version") if sched else None,
+                "last_error": sched.get("last_error") if sched else None,
+                "cycle_count": sched.get("cycle_count") if sched else None,
+                "note": "Salud por heartbeat DB, no por contenedor Docker.",
+            },
+        },
     }
     return serial(
         {
@@ -753,6 +810,9 @@ async def system():
             "scan_every_seconds": PERIOD,
             "failed_requests_24h": failed_reqs,
             "open_alerts": open_alerts,
+            "prospect_open_alerts": prospect_open_alerts,
+            "shadow_scheduler": sched,
+            "shadow_scheduler_cycles": recent_cycles,
             "recent_errors": events,
             "audit": audit,
             "ohlcv_cache": ohlcv_mod.cache_stats(),
@@ -760,6 +820,7 @@ async def system():
                 "Sin acceso al socket Docker desde el dashboard.",
                 "CPU/RAM host: usar docker stats en el equipo local.",
                 "UNKNOWN/WARNING/ERROR se basan en evidencia temporal.",
+                "shadow_scheduler: heartbeat >900s ⇒ ERROR; contenedor up ≠ saludable.",
             ],
         }
     )

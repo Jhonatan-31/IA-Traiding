@@ -66,6 +66,12 @@ def ensure_prospect_schema(execute: Callable) -> None:
               CHECK (resolution_status IN ('PENDING','RESOLVED','INVALID'))
         )"""
     )
+    # One decision per experiment+symbol+interval+candle (restart-safe)
+    execute(
+        """CREATE UNIQUE INDEX IF NOT EXISTS prospect_decisions_uniq_candle
+           ON prospect_decisions(experiment_id, symbol, interval, candle_open_ms)
+           WHERE candle_open_ms IS NOT NULL"""
+    )
     # Outcomes are append-only; decision row fields above are never rewritten except resolution_status
     execute(
         """CREATE TABLE IF NOT EXISTS prospect_outcomes(
@@ -138,4 +144,58 @@ def ensure_prospect_schema(execute: Callable) -> None:
             CONSTRAINT virt_orders_status_chk
               CHECK (status IN ('PENDING','REJECTED','PARTIAL','FILLED','CANCELLED'))
         )"""
+    )
+    # Shadow scheduler observability (Etapa I)
+    execute(
+        """CREATE TABLE IF NOT EXISTS shadow_scheduler_state(
+            id INTEGER PRIMARY KEY,
+            status TEXT NOT NULL DEFAULT 'UNKNOWN',
+            heartbeat_at TIMESTAMPTZ,
+            last_cycle_at TIMESTAMPTZ,
+            last_cycle_ok BOOLEAN,
+            last_error TEXT,
+            last_inference_at TIMESTAMPTZ,
+            last_resolve_at TIMESTAMPTZ,
+            cycle_count BIGINT NOT NULL DEFAULT 0,
+            inference_errors BIGINT NOT NULL DEFAULT 0,
+            resolve_errors BIGINT NOT NULL DEFAULT 0,
+            connection_errors BIGINT NOT NULL DEFAULT 0,
+            active_model_version TEXT,
+            meta_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            updated_at TIMESTAMPTZ DEFAULT NOW()
+        )"""
+    )
+    execute(
+        """INSERT INTO shadow_scheduler_state(id, status)
+           VALUES(1, 'UNKNOWN') ON CONFLICT DO NOTHING"""
+    )
+    execute(
+        """CREATE TABLE IF NOT EXISTS shadow_scheduler_cycles(
+            id BIGSERIAL PRIMARY KEY,
+            started_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            finished_at TIMESTAMPTZ,
+            ok BOOLEAN,
+            decisions_new INT DEFAULT 0,
+            decisions_skipped INT DEFAULT 0,
+            resolved INT DEFAULT 0,
+            invalid INT DEFAULT 0,
+            error TEXT,
+            meta_json JSONB NOT NULL DEFAULT '{}'::jsonb
+        )"""
+    )
+    execute(
+        """CREATE TABLE IF NOT EXISTS prospect_alerts(
+            id BIGSERIAL PRIMARY KEY,
+            created_at TIMESTAMPTZ DEFAULT NOW(),
+            code TEXT NOT NULL,
+            severity TEXT NOT NULL,
+            message TEXT NOT NULL,
+            evidence_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            status TEXT NOT NULL DEFAULT 'OPEN'
+        )"""
+    )
+    # At most one OPEN alert per code (CLEARED history unrestricted)
+    execute(
+        """CREATE UNIQUE INDEX IF NOT EXISTS prospect_alerts_open_uniq
+           ON prospect_alerts(code) WHERE status='OPEN'"""
     )

@@ -44,6 +44,20 @@ services:
     ports:
       - "127.0.0.1:8088:8080"
     depends_on: [api]
+  shadow-scheduler:
+    build: ./backend
+    command: ["python", "-m", "app.prospect.scheduler"]
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://paper:${DB_PASSWORD:?Set DB_PASSWORD}@db:5432/paper
+      ML_ARTIFACT_DIR: /artifacts
+      SHADOW_EVERY_SECONDS: ${SHADOW_EVERY_SECONDS:-300}
+      TZ: UTC
+    volumes:
+      - ml_artifacts:/artifacts
+    depends_on:
+      db:
+        condition: service_healthy
   ml-train:
     build: ./backend
     profiles: ["ml"]

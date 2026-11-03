@@ -368,6 +368,21 @@ export const api = {
   },
   prospectBenchmarks: () =>
     getJson<Record<string, unknown>>("/api/prospect/benchmarks"),
+  prospectScheduler: () =>
+    getJson<Record<string, unknown>>("/api/prospect/scheduler"),
+  prospectMetrics: (experiment_type = "SHADOW_LIVE") =>
+    getJson<Record<string, unknown>>(
+      `/api/prospect/metrics?experiment_type=${encodeURIComponent(experiment_type)}`
+    ),
+  prospectAlerts: (status = "OPEN") =>
+    getJson<Record<string, unknown>[]>(
+      `/api/prospect/alerts?status=${encodeURIComponent(status)}`
+    ),
+  prospectAlertsEvaluate: async () => {
+    const res = await fetch("/api/prospect/alerts/evaluate", { method: "POST" });
+    if (!res.ok) throw new Error(`prospect alerts → HTTP ${res.status}`);
+    return res.json() as Promise<Record<string, unknown>>;
+  },
   prospectShadowLiveRun: async () => {
     const res = await fetch("/api/prospect/shadow-live/run", { method: "POST" });
     if (!res.ok) throw new Error(`prospect shadow-live → HTTP ${res.status}`);

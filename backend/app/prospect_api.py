@@ -10,9 +10,11 @@ router = APIRouter(prefix="/api/prospect", tags=["prospect"])
 
 @router.get("/status")
 def prospect_status():
-    from .main import db, serial
+    from .main import db, serial, _age_seconds, _status_from_age
     from .prospect.decisions import decision_counts
+    from .prospect.degradation import THRESHOLDS
     from .prospect.ledger import accounting_identity_ok, ledger_snapshot
+    from .prospect.metrics import prospective_metrics
 
     with db() as c:
         ensure_prospect_schema(c.execute)
@@ -31,6 +33,34 @@ def prospect_status():
         ).fetchone()
         virt = ledger_snapshot(c.execute)
         identity = accounting_identity_ok(c.execute)
+        sched = c.execute(
+            "SELECT * FROM shadow_scheduler_state WHERE id=1"
+        ).fetchone()
+        alerts = list(
+            c.execute(
+                """SELECT * FROM prospect_alerts WHERE status='OPEN'
+                   ORDER BY id DESC LIMIT 20"""
+            )
+        )
+        metrics = prospective_metrics(c.execute, experiment_type="SHADOW_LIVE")
+        last_pred = c.execute(
+            """SELECT MAX(d.created_at) AS at FROM prospect_decisions d
+               JOIN prospect_experiments e ON e.id=d.experiment_id
+               WHERE e.experiment_type='SHADOW_LIVE'"""
+        ).fetchone()
+        last_res = c.execute(
+            "SELECT MAX(resolved_at) AS at FROM prospect_outcomes"
+        ).fetchone()
+        runtime = c.execute("SELECT * FROM ml_runtime WHERE id=1").fetchone()
+    hb_age = _age_seconds(sched["heartbeat_at"] if sched else None)
+    if not sched or not sched.get("heartbeat_at"):
+        sched_health = "UNKNOWN"
+    elif sched.get("status") == "ERROR":
+        sched_health = "ERROR"
+    else:
+        sched_health = _status_from_age(
+            hb_age, THRESHOLDS["scheduler_warn_s"], THRESHOLDS["scheduler_stale_s"]
+        )
     return serial(
         {
             "counts": counts,
@@ -42,6 +72,21 @@ def prospect_status():
             "paper_sma_untouched": True,
             "paper_ai_authorized": False,
             "real_trading": False,
+            "scheduler": {
+                "health": sched_health,
+                "heartbeat_age_s": hb_age,
+                "state": sched,
+                "last_prediction_at": last_pred["at"] if last_pred else None,
+                "last_resolve_at": last_res["at"] if last_res else None,
+                "active_model_version": (sched or {}).get("active_model_version")
+                or (runtime or {}).get("active_model_version"),
+            },
+            "metrics_shadow_live": metrics,
+            "open_alerts": alerts,
+            "data_classes": {
+                "observed": "precios/velas Binance públicas",
+                "simulated": "retornos netos hipotéticos, ledger virtual, costos estimados",
+            },
         }
     )
 
@@ -149,9 +194,11 @@ def prospect_ledger():
 def prospect_benchmarks():
     """Prospective resolved nets vs cash benchmark (SHADOW_LIVE only)."""
     from .main import db, serial
+    from .prospect.metrics import prospective_metrics
 
     with db() as c:
         ensure_prospect_schema(c.execute)
+        metrics = prospective_metrics(c.execute, experiment_type="SHADOW_LIVE")
         rows = list(
             c.execute(
                 """SELECT d.action, o.observed_net_return, o.status
@@ -174,9 +221,99 @@ def prospect_benchmarks():
             "mean_buy_net": sum(buys) / len(buys) if buys else None,
             "hold_n": len(holds),
             "cash_benchmark_net": 0.0,
+            "metrics": metrics,
             "note": (
                 "Prospective only. Not mixed with BACKTEST or SHADOW_REPLAY. "
-                "Insufficient n ⇒ no edge claim."
+                "Insufficient n ⇒ no edge claim. HOLD is not a profitable trade."
             ),
         }
     )
+
+
+@router.get("/scheduler")
+def prospect_scheduler():
+    from .main import db, serial
+    from .prospect.decisions import decision_counts
+    from .prospect.degradation import THRESHOLDS
+
+    with db() as c:
+        ensure_prospect_schema(c.execute)
+        state = c.execute("SELECT * FROM shadow_scheduler_state WHERE id=1").fetchone()
+        cycles = list(
+            c.execute(
+                """SELECT * FROM shadow_scheduler_cycles ORDER BY id DESC LIMIT 20"""
+            )
+        )
+        live = decision_counts(c.execute, "SHADOW_LIVE")
+        last_pred = c.execute(
+            """SELECT MAX(d.created_at) AS at FROM prospect_decisions d
+               JOIN prospect_experiments e ON e.id=d.experiment_id
+               WHERE e.experiment_type='SHADOW_LIVE'"""
+        ).fetchone()
+        last_res = c.execute(
+            "SELECT MAX(resolved_at) AS at FROM prospect_outcomes"
+        ).fetchone()
+    from .main import _age_seconds, _status_from_age
+
+    hb_age = _age_seconds(state["heartbeat_at"] if state else None)
+    if not state or not state.get("heartbeat_at"):
+        health = "UNKNOWN"
+    elif state.get("status") == "ERROR":
+        health = "ERROR"
+    else:
+        health = _status_from_age(
+            hb_age, THRESHOLDS["scheduler_warn_s"], THRESHOLDS["scheduler_stale_s"]
+        )
+    return serial(
+        {
+            "health": health,
+            "heartbeat_age_s": hb_age,
+            "state": state,
+            "counts_shadow_live": live,
+            "last_prediction_at": last_pred["at"] if last_pred else None,
+            "last_resolve_at": last_res["at"] if last_res else None,
+            "recent_cycles": cycles,
+            "thresholds": THRESHOLDS,
+            "note": "Salud por heartbeat, no por estado del contenedor.",
+        }
+    )
+
+
+@router.get("/metrics")
+def prospect_metrics_api(experiment_type: str = "SHADOW_LIVE"):
+    from .main import db, serial
+    from .prospect.metrics import prospective_metrics
+
+    if experiment_type not in ("SHADOW_LIVE", "SHADOW_REPLAY", "BACKTEST", "PAPER_TRADE"):
+        raise HTTPException(400, "invalid experiment_type")
+    with db() as c:
+        ensure_prospect_schema(c.execute)
+        return serial(prospective_metrics(c.execute, experiment_type=experiment_type))
+
+
+@router.get("/alerts")
+def prospect_alerts_list(status: str = "OPEN"):
+    from .main import db, serial
+
+    with db() as c:
+        ensure_prospect_schema(c.execute)
+        rows = list(
+            c.execute(
+                """SELECT * FROM prospect_alerts
+                   WHERE (%s='' OR status=%s)
+                   ORDER BY id DESC LIMIT 100""",
+                (status or "", status or ""),
+            )
+        )
+    return serial(rows)
+
+
+@router.post("/alerts/evaluate")
+def prospect_alerts_evaluate():
+    from .main import db, serial
+    from .prospect.degradation import evaluate_degradation
+
+    with db() as c:
+        ensure_prospect_schema(c.execute)
+        result = evaluate_degradation(c.execute)
+    return serial(result)

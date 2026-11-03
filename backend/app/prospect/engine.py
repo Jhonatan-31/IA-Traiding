@@ -96,42 +96,51 @@ async def run_shadow_live_cycle(
                     order_book=None,  # never invent book
                 )
                 with db_factory() as c:
-                    # de-dupe same candle
+                    # de-dupe same candle (pre-check + unique index ON CONFLICT)
                     exists = c.execute(
                         """SELECT id FROM prospect_decisions
-                           WHERE experiment_id=%s AND symbol=%s AND candle_open_ms=%s""",
-                        (exp_id, sym, last["open_time"]),
+                           WHERE experiment_id=%s AND symbol=%s AND interval=%s
+                             AND candle_open_ms=%s""",
+                        (exp_id, sym, "1h", last["open_time"]),
                     ).fetchone()
                     if exists:
                         created.append({"symbol": sym, "skipped": "duplicate_candle"})
                         continue
-                    dec = record_decision(
-                        c.execute,
-                        experiment_id=exp_id,
-                        symbol=sym,
-                        interval="1h",
-                        strategy="sma10_50_prospect",
-                        strategy_version="v1",
-                        action=action,
-                        reason=reason,
-                        horizon_bars=6,
-                        observed_price=float(last["close"]),
-                        data_ref={
-                            "candle_open_ms": last["open_time"],
-                            "source": "binance_public_klines",
-                            "closed_only": True,
-                        },
-                        system_state=system_state,
-                        risk_state=risk_state,
-                        estimated_costs={
-                            "fee_rate": assumptions.fee_rate,
-                            "slip_rate": assumptions.base_slip_rate,
-                            "spread_bps": assumptions.spread_bps,
-                            "fill_preview": fill,
-                        },
-                        model_version=(runtime or {}).get("active_model_version"),
-                        candle_open_ms=int(last["open_time"]),
-                    )
+                    try:
+                        dec = record_decision(
+                            c.execute,
+                            experiment_id=exp_id,
+                            symbol=sym,
+                            interval="1h",
+                            strategy="sma10_50_prospect",
+                            strategy_version="v1",
+                            action=action,
+                            reason=reason,
+                            horizon_bars=6,
+                            observed_price=float(last["close"]),
+                            data_ref={
+                                "candle_open_ms": last["open_time"],
+                                "source": "binance_public_klines",
+                                "closed_only": True,
+                            },
+                            system_state=system_state,
+                            risk_state=risk_state,
+                            estimated_costs={
+                                "fee_rate": assumptions.fee_rate,
+                                "slip_rate": assumptions.base_slip_rate,
+                                "spread_bps": assumptions.spread_bps,
+                                "fill_preview": fill,
+                            },
+                            model_version=(runtime or {}).get("active_model_version"),
+                            candle_open_ms=int(last["open_time"]),
+                        )
+                    except Exception as iex:
+                        # Unique violation on restart race → treat as skip
+                        msg = str(iex).lower()
+                        if "unique" in msg or "duplicate" in msg:
+                            created.append({"symbol": sym, "skipped": "duplicate_candle_race"})
+                            continue
+                        raise
                 created.append(
                     {
                         "symbol": sym,

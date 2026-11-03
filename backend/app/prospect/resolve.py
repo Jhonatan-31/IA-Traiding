@@ -143,10 +143,11 @@ async def resolve_pending(
                             horizon=horizon,
                         )
             except Exception as exc:
+                # Transient API/network failures stay PENDING for retry (idempotent)
                 result = {
-                    "status": "INVALID",
-                    "reason": f"fetch_error:{type(exc).__name__}",
-                    "data_quality": "fetch_error",
+                    "status": "PENDING",
+                    "reason": f"transient_fetch:{type(exc).__name__}",
+                    "data_quality": "fetch_retry",
                     "observed_label": None,
                     "observed_net_return": None,
                 }

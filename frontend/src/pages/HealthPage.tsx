@@ -120,12 +120,55 @@ export default function HealthPage() {
           <p>Precios: {system?.counts.prices ?? "Sin datos"}</p>
           <p>Scans: {system?.counts.scans ?? "Sin datos"}</p>
           <p>Alertas abiertas: {system?.open_alerts ?? "Sin datos"}</p>
+          <p>
+            Alertas prospectivas:{" "}
+            {(system as { prospect_open_alerts?: number } | null)?.prospect_open_alerts ??
+              "Sin datos"}
+          </p>
           <p>Precios max at: {fmtTime(system?.prices_max_at)}</p>
           <p>Check at: {fmtTime(system?.checked_at)}</p>
           <p className="muted" style={{ marginTop: 8, fontSize: 12 }}>
             CPU/RAM: ejecutar `docker stats` en el host (no expuesto aquí).
           </p>
         </div>
+      </div>
+
+      <div className="card" style={{ marginTop: 14 }}>
+        <h3>Shadow Scheduler (evidencia de heartbeat, no solo contenedor)</h3>
+        {(() => {
+          const sc = comps.shadow_scheduler;
+          const ev = (sc?.evidence || {}) as Record<string, unknown>;
+          return (
+            <>
+              <p>
+                Estado:{" "}
+                <span className={`pill ${pillFor(sc?.status)}`}>
+                  {sc?.status || "UNKNOWN"}
+                </span>
+              </p>
+              <p>Heartbeat: {fmtTime(ev.heartbeat_at as string)} (edad {String(ev.heartbeat_age_s ?? "—")} s)</p>
+              <p>Último ciclo: {fmtTime(ev.last_cycle_at as string)} · ok={String(ev.last_cycle_ok ?? "—")}</p>
+              <p>
+                Última predicción: {fmtTime(ev.last_prediction_at as string)} · Última
+                resolución: {fmtTime(ev.last_outcome_at as string)}
+              </p>
+              <p>
+                Pendientes: {String(ev.pending ?? "—")} · Resueltas:{" "}
+                {String(ev.resolved ?? "—")} · Inválidas: {String(ev.invalid ?? "—")}
+              </p>
+              <p>
+                Errores inferencia/conexión/resolve: {String(ev.inference_errors ?? 0)} /{" "}
+                {String(ev.connection_errors ?? 0)} / {String(ev.resolve_errors ?? 0)}
+              </p>
+              <p>Modelo activo: {String(ev.active_model_version ?? "Sin datos")}</p>
+              {ev.last_error ? (
+                <p className="muted" style={{ fontSize: 12 }}>
+                  Último error: {String(ev.last_error)}
+                </p>
+              ) : null}
+            </>
+          );
+        })()}
       </div>
 
       <div className="card" style={{ marginTop: 14 }}>
