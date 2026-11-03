@@ -22,7 +22,15 @@ const links = [
 ];
 
 function PageLoader() {
-  return <p className="muted">Cargando módulo…</p>;
+  return (
+    <div>
+      <p className="muted">Cargando módulo…</p>
+      <p className="muted" style={{ fontSize: 12 }}>
+        Si permanece más de unos segundos tras recrear el dashboard, recargue la
+        página (Ctrl+F5).
+      </p>
+    </div>
+  );
 }
 
 export default function App() {

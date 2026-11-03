@@ -39,11 +39,17 @@ export type MlStatus = {
     validated_for_research: boolean;
     mean_roc_auc_hist_gb: number | null;
     mean_roc_auc_naive: number | null;
+    mean_ece_calibrated_test?: number | null;
     disclaimer: string | null;
   } | null;
   prediction_count: number;
   pending_resolution: number;
+  resolved_count?: number;
   datasets: number;
+  circuit_breaker?: {
+    active: boolean;
+    reason: string | null;
+  } | null;
   execution_policy: string;
 };
 
@@ -57,6 +63,10 @@ export type MlPrediction = {
   accepted: boolean;
   reject_reason: string | null;
   observed_label: number | null;
+  observed_net_return?: number | null;
+  resolution_status?: string | null;
+  source?: string | null;
+  data_quality?: string | null;
 };
 
 export type Position = {
@@ -302,9 +312,34 @@ export const api = {
     return res.json();
   },
   mlStatus: () => getJson<MlStatus>("/api/ml/status"),
-  mlPredictions: (limit = 50) =>
-    getJson<MlPrediction[]>(`/api/ml/predictions?limit=${limit}`),
+  mlPredictions: (limit = 50, opts?: { unresolved?: boolean; resolvedOnly?: boolean }) => {
+    const q = new URLSearchParams({ limit: String(limit) });
+    if (opts?.unresolved) q.set("unresolved", "true");
+    if (opts?.resolvedOnly) q.set("resolved_only", "true");
+    return getJson<MlPrediction[]>(`/api/ml/predictions?${q}`);
+  },
+  mlPredictionsSummary: () =>
+    getJson<Record<string, unknown>>("/api/ml/predictions/summary"),
   mlComparison: () => getJson<Record<string, unknown>>("/api/ml/comparison"),
+  mlCircuitBreaker: () => getJson<Record<string, unknown>>("/api/ml/circuit-breaker"),
+  mlCircuitEvaluate: async () => {
+    const res = await fetch("/api/ml/circuit-breaker/evaluate", { method: "POST" });
+    if (!res.ok) throw new Error(`circuit-breaker → HTTP ${res.status}`);
+    return res.json();
+  },
+  mlResolve: async () => {
+    const res = await fetch("/api/ml/resolve", { method: "POST" });
+    if (!res.ok) throw new Error(`resolve → HTTP ${res.status}`);
+    return res.json() as Promise<{ resolved: number; still_pending: number }>;
+  },
+  mlShadowReplay: async (max_per_symbol = 6) => {
+    const res = await fetch(
+      `/api/ml/shadow/replay?max_per_symbol=${max_per_symbol}`,
+      { method: "POST" }
+    );
+    if (!res.ok) throw new Error(`shadow/replay → HTTP ${res.status}`);
+    return res.json() as Promise<{ attempted: number; inserted_delta: number }>;
+  },
   mlShadowRun: async (limit_symbols = 10) => {
     const res = await fetch(`/api/ml/shadow/run?limit_symbols=${limit_symbols}`, {
       method: "POST",

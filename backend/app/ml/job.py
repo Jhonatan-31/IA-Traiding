@@ -10,7 +10,7 @@ import psycopg
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 
-from .dataset import DEFAULT_SYMBOLS, build_dataset
+from .dataset import DEFAULT_SYMBOLS, build_dataset, build_dataset_incremental, quality_report, load_jsonl
 from .schema import ensure_ml_schema
 from .train import walk_forward_train
 
@@ -33,10 +33,33 @@ async def run() -> dict:
     )
 
     print("ML_TRAIN start", flush=True)
-    meta = await build_dataset(
-        symbols=symbol_list, interval=interval, max_bars=max_bars, out_dir=datasets
-    )
-    print("DATASET", meta.get("row_count"), meta.get("checksum"), flush=True)
+    prior = None
+    with db() as c:
+        ensure_ml_schema(c.execute)
+        row = c.execute(
+            "SELECT data_path FROM ml_datasets ORDER BY id DESC LIMIT 1"
+        ).fetchone()
+        if row and row.get("data_path"):
+            prior = Path(row["data_path"])
+    if prior and prior.exists():
+        meta = await build_dataset_incremental(
+            symbols=symbol_list,
+            interval=interval,
+            max_bars=max_bars,
+            out_dir=datasets,
+            existing_path=prior,
+        )
+        print("DATASET_INCREMENTAL", meta.get("row_count"), meta.get("checksum"), flush=True)
+    else:
+        meta = await build_dataset(
+            symbols=symbol_list, interval=interval, max_bars=max_bars, out_dir=datasets
+        )
+        print("DATASET", meta.get("row_count"), meta.get("checksum"), flush=True)
+    try:
+        q = meta.get("quality") or quality_report(load_jsonl(Path(meta["data_path"])), interval)
+        print("QUALITY_SYMBOLS", q.get("totals"), flush=True)
+    except Exception as qe:
+        print("QUALITY_ERR", qe, flush=True)
     data_path = Path(meta["data_path"])
     result = walk_forward_train(data_path, models)
     print("TRAIN_STATUS", result.get("status"), result.get("model_version"), flush=True)
@@ -84,6 +107,32 @@ async def run() -> dict:
                 (
                     result["model_version"],
                     "auto-set after offline train; execution still shadow-only",
+                ),
+            )
+            c.execute(
+                """INSERT INTO ml_experiments(name, params_json, metrics_json, notes)
+                   VALUES(%s,%s,%s,%s)""",
+                (
+                    f"walk_forward_{result['model_version']}",
+                    Jsonb(
+                        {
+                            "symbols": symbol_list,
+                            "interval": interval,
+                            "max_bars": max_bars,
+                            "n_samples": result.get("n_samples"),
+                        }
+                    ),
+                    Jsonb(
+                        {
+                            "mean_roc_auc_hist_gb": result.get("mean_roc_auc_hist_gb"),
+                            "strategy_comparison": result.get("strategy_comparison"),
+                            "mean_ece_calibrated_test": result.get(
+                                "mean_ece_calibrated_test"
+                            ),
+                            "validated_for_paper_ai": False,
+                        }
+                    ),
+                    "Etapa F offline experiment — no PAPER_AI promotion",
                 ),
             )
     summary_path = models / "last_train_summary.json"

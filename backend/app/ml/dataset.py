@@ -226,3 +226,107 @@ def load_jsonl(path: Path) -> list[dict]:
             if line:
                 rows.append(json.loads(line))
     return rows
+
+
+def quality_report(rows: list[dict], interval: str) -> dict[str, Any]:
+    """Per-symbol quality summary for incremental datasets."""
+    by_sym: dict[str, list[dict]] = {}
+    for r in rows:
+        by_sym.setdefault(r["symbol"], []).append(r)
+    report: dict[str, Any] = {"interval": interval, "symbols": {}, "totals": {}}
+    total_gaps = 0
+    total_dupes = 0
+    for sym, items in sorted(by_sym.items()):
+        items = sorted(items, key=lambda x: x["open_time"])
+        candles = [
+            CandleRow(
+                symbol=sym,
+                interval=interval,
+                open_time=int(r["open_time"]),
+                close_time=int(r["close_time"]),
+                open=float(r["open"]),
+                high=float(r["high"]),
+                low=float(r["low"]),
+                close=float(r["close"]),
+                volume=float(r["volume"]),
+            )
+            for r in items
+        ]
+        issues = detect_issues(candles)
+        # gap estimate by open_time steps
+        step = {"5m": 300_000, "15m": 900_000, "1h": 3_600_000, "4h": 14_400_000}.get(
+            interval, 3_600_000
+        )
+        missing = 0
+        for a, b in zip(candles, candles[1:]):
+            delta = b.open_time - a.open_time
+            if delta > step * 1.5:
+                missing += int(round(delta / step)) - 1
+        total_gaps += missing
+        total_dupes += issues["duplicates"]
+        report["symbols"][sym] = {
+            "bars": len(candles),
+            "from_ms": candles[0].open_time if candles else None,
+            "to_ms": candles[-1].close_time if candles else None,
+            "from_utc": datetime.fromtimestamp(
+                candles[0].open_time / 1000, tz=timezone.utc
+            ).isoformat()
+            if candles
+            else None,
+            "to_utc": datetime.fromtimestamp(
+                candles[-1].close_time / 1000, tz=timezone.utc
+            ).isoformat()
+            if candles
+            else None,
+            "issues": issues,
+            "estimated_missing_bars": missing,
+        }
+    report["totals"] = {
+        "symbols": len(by_sym),
+        "rows": len(rows),
+        "estimated_missing_bars": total_gaps,
+        "duplicates": total_dupes,
+    }
+    return report
+
+
+async def build_dataset_incremental(
+    *,
+    symbols: list[str] | None = None,
+    interval: str = "1h",
+    max_bars: int = 1500,
+    out_dir: Path,
+    existing_path: Path | None = None,
+) -> dict[str, Any]:
+    """Merge new closed candles with an existing jsonl without duplicating open_times."""
+    symbols = symbols or DEFAULT_SYMBOLS
+    existing: list[dict] = load_jsonl(existing_path) if existing_path and existing_path.exists() else []
+    by_key: dict[tuple[str, int], dict] = {
+        (r["symbol"], int(r["open_time"])): r for r in existing
+    }
+    meta = await build_dataset(
+        symbols=symbols, interval=interval, max_bars=max_bars, out_dir=out_dir
+    )
+    fresh = load_jsonl(Path(meta["data_path"]))
+    for r in fresh:
+        by_key[(r["symbol"], int(r["open_time"]))] = r
+    merged = [by_key[k] for k in sorted(by_key.keys(), key=lambda x: (x[0], x[1]))]
+    q = quality_report(merged, interval)
+    checksum = checksum_rows(merged)
+    data_path = out_dir / f"ohlcv_{interval}_{checksum[:12]}_inc.jsonl"
+    with data_path.open("w", encoding="utf-8") as f:
+        for row in merged:
+            f.write(json.dumps(row) + "\n")
+    out = {
+        **meta,
+        "row_count": len(merged),
+        "checksum": checksum,
+        "data_path": str(data_path),
+        "incremental": True,
+        "prior_rows": len(existing),
+        "quality": q,
+    }
+    meta_path = out_dir / f"dataset_{interval}_{checksum[:12]}_inc.meta.json"
+    meta_path.write_text(json.dumps(out, indent=2), encoding="utf-8")
+    out["meta_path"] = str(meta_path)
+    return out

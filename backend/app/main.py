@@ -290,32 +290,41 @@ async def cycle(client: httpx.AsyncClient):
                     "SELECT * FROM positions WHERE symbol=%s", (symbol,)
                 ).fetchone()
                 if side == "BUY" and not past and not position:
-                    n = c.execute("SELECT COUNT(*) AS n FROM positions").fetchone()["n"]
-                    cash = c.execute("SELECT cash FROM account WHERE id=1").fetchone()["cash"]
-                    budget = min(BUDGET, cash)
-                    if n < MAX_POSITIONS and budget >= MIN_BUDGET:
-                        fill = price * (1 + SLIP)
-                        qty = (budget * (1 - FEE)) / fill
-                        c.execute("UPDATE account SET cash=cash-%s WHERE id=1", (budget,))
-                        c.execute(
-                            "INSERT INTO positions VALUES(%s,%s,%s)",
-                            (symbol, qty, budget),
+                    breaker = c.execute(
+                        "SELECT active, reason FROM circuit_breaker_state WHERE id=1"
+                    ).fetchone()
+                    if breaker and breaker.get("active"):
+                        log_event(
+                            "WARN",
+                            f"circuit_breaker_block_buy {symbol} {breaker.get('reason')}",
                         )
-                        c.execute(
-                            """INSERT INTO trades(symbol,side,qty,price,candle_ms,fee_rate,slip_rate,strategy,reason)
-                               VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
-                            (
-                                symbol,
-                                "BUY",
-                                qty,
-                                fill,
-                                end,
-                                FEE,
-                                SLIP,
-                                STRATEGY,
-                                "sma10_cross_above_sma50",
-                            ),
-                        )
+                    else:
+                        n = c.execute("SELECT COUNT(*) AS n FROM positions").fetchone()["n"]
+                        cash = c.execute("SELECT cash FROM account WHERE id=1").fetchone()["cash"]
+                        budget = min(BUDGET, cash)
+                        if n < MAX_POSITIONS and budget >= MIN_BUDGET:
+                            fill = price * (1 + SLIP)
+                            qty = (budget * (1 - FEE)) / fill
+                            c.execute("UPDATE account SET cash=cash-%s WHERE id=1", (budget,))
+                            c.execute(
+                                "INSERT INTO positions VALUES(%s,%s,%s)",
+                                (symbol, qty, budget),
+                            )
+                            c.execute(
+                                """INSERT INTO trades(symbol,side,qty,price,candle_ms,fee_rate,slip_rate,strategy,reason)
+                                   VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                                (
+                                    symbol,
+                                    "BUY",
+                                    qty,
+                                    fill,
+                                    end,
+                                    FEE,
+                                    SLIP,
+                                    STRATEGY,
+                                    "sma10_cross_above_sma50",
+                                ),
+                            )
                 elif side == "SELL" and not past and position:
                     qty = position["qty"]
                     fill = price * (1 - SLIP)
@@ -461,6 +470,15 @@ async def work():
         while True:
             try:
                 await cycle(client)
+                # Etapa F: resolve completed Shadow horizons (no orders)
+                try:
+                    from .ml.resolve import resolve_pending_predictions
+
+                    summary = await resolve_pending_predictions(db, limit=50)
+                    if summary.get("resolved"):
+                        print("SHADOW_RESOLVE", summary["resolved"], flush=True)
+                except Exception as rex:
+                    print("SHADOW_RESOLVE_ERR", type(rex).__name__, rex, flush=True)
             except Exception as exc:
                 log_event("ERROR", f"COLLECTOR_ERROR {type(exc).__name__}: {exc}")
                 print("COLLECTOR_ERROR", type(exc).__name__, str(exc), flush=True)
