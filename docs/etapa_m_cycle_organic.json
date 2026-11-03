@@ -1,0 +1,100 @@
+﻿{
+    "ok":  true,
+    "paused":  false,
+    "signals":  {
+                    "scanned":  15,
+                    "signals":  0,
+                    "signals_buy":  0,
+                    "signals_sell":  0,
+                    "signals_hold":  15,
+                    "enqueued":  0,
+                    "duplicates":  0,
+                    "errors":  0,
+                    "hold_sample":  [
+                                        {
+                                            "symbol":  "USDCUSDT",
+                                            "reason":  "no_sma_cross_on_closed_bar",
+                                            "candle_open_ms":  1793732400000,
+                                            "closed_only":  true
+                                        },
+                                        {
+                                            "symbol":  "BTCUSDT",
+                                            "reason":  "no_sma_cross_on_closed_bar",
+                                            "candle_open_ms":  1793732400000,
+                                            "closed_only":  true
+                                        },
+                                        {
+                                            "symbol":  "ETHUSDT",
+                                            "reason":  "no_sma_cross_on_closed_bar",
+                                            "candle_open_ms":  1793732400000,
+                                            "closed_only":  true
+                                        },
+                                        {
+                                            "symbol":  "ZECUSDT",
+                                            "reason":  "no_sma_cross_on_closed_bar",
+                                            "candle_open_ms":  1793732400000,
+                                            "closed_only":  true
+                                        },
+                                        {
+                                            "symbol":  "USD1USDT",
+                                            "reason":  "no_sma_cross_on_closed_bar",
+                                            "candle_open_ms":  1793732400000,
+                                            "closed_only":  true
+                                        },
+                                        {
+                                            "symbol":  "SOLUSDT",
+                                            "reason":  "no_sma_cross_on_closed_bar",
+                                            "candle_open_ms":  1793732400000,
+                                            "closed_only":  true
+                                        },
+                                        {
+                                            "symbol":  "XRPUSDT",
+                                            "reason":  "no_sma_cross_on_closed_bar",
+                                            "candle_open_ms":  1793732400000,
+                                            "closed_only":  true
+                                        },
+                                        {
+                                            "symbol":  "NEARUSDT",
+                                            "reason":  "no_sma_cross_on_closed_bar",
+                                            "candle_open_ms":  1793732400000,
+                                            "closed_only":  true
+                                        }
+                                    ],
+                    "items":  [
+
+                              ]
+                },
+    "exits":  {
+                  "checked":  0,
+                  "enqueued":  0,
+                  "held":  0
+              },
+    "orders":  {
+                   "processed":  0,
+                   "filled":  0,
+                   "rejected":  0,
+                   "items":  [
+
+                             ]
+               },
+    "valuation":  {
+                      "valuation_status":  "OK",
+                      "cash":  999.8653513585895,
+                      "invested_cost":  0.0,
+                      "market_value_positions":  0.0,
+                      "equity_estimate":  999.8653513585895,
+                      "realized_pnl":  -0.13464864141052396,
+                      "unrealized_pnl":  0.0,
+                      "fees_accumulated":  0.049890241600189664,
+                      "return_vs_initial":  -0.00013464864141052397,
+                      "drawdown_vs_peak":  0.0,
+                      "peak_equity":  999.865351358589,
+                      "initial_capital":  1000.0,
+                      "positions":  [
+
+                                    ],
+                      "note":  "MTM con ticker pÃºblico Binance; fees/slip ya embebidos en fills."
+                  },
+    "duration_ms":  6255,
+    "note":  "PAPER_ONLY lab ledger; SMA paper account untouched; Shadow AI not executing."
+}

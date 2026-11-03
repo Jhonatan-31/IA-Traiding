@@ -1,0 +1,7 @@
+﻿[
+  {"id":1,"scanned":15,"buy":0,"sell":0,"hold":15,"filled":0,"duration_ms":6728,"ok":true,"hold_reason":"no_sma_cross_on_closed_bar"},
+  {"id":2,"scanned":15,"buy":0,"sell":0,"hold":15,"filled":0,"duration_ms":6255,"ok":true,"hold_reason":"no_sma_cross_on_closed_bar"},
+  {"id":3,"scanned":15,"buy":0,"sell":0,"hold":15,"filled":0,"duration_ms":3223,"ok":true,"hold_reason":"no_sma_cross_on_closed_bar"},
+  {"id":4,"scanned":15,"buy":0,"sell":0,"hold":15,"filled":0,"duration_ms":3246,"ok":true,"hold_reason":"no_sma_cross_on_closed_bar"},
+  {"id":5,"scanned":15,"buy":0,"sell":0,"hold":15,"filled":0,"duration_ms":3029,"ok":true,"hold_reason":"no_sma_cross_on_closed_bar"}
+]

@@ -376,7 +376,9 @@ async def scan_exits(db_factory) -> dict[str, Any]:
 
 async def run_lab_cycle(db_factory) -> dict[str, Any]:
     from .signals import scan_and_enqueue
+    from .valuation import fetch_marks, portfolio_valuation
 
+    started = _now()
     with db_factory() as c:
         ensure_lab_schema(c.execute)
         state = c.execute("SELECT paused FROM lab_executor_state WHERE id=1").fetchone()
@@ -384,6 +386,18 @@ async def run_lab_cycle(db_factory) -> dict[str, Any]:
             c.execute(
                 """UPDATE lab_executor_state SET
                      heartbeat_at=NOW(), status='PAUSED', updated_at=NOW() WHERE id=1"""
+            )
+            finished = _now()
+            c.execute(
+                """INSERT INTO lab_cycles(
+                    started_at, finished_at, duration_ms, ok, paused, meta_json)
+                   VALUES(%s,%s,%s,TRUE,TRUE,%s::jsonb)""",
+                (
+                    started,
+                    finished,
+                    int((finished - started).total_seconds() * 1000),
+                    json.dumps({"note": "paused_skip"}),
+                ),
             )
             return {"ok": True, "paused": True}
 
@@ -393,6 +407,28 @@ async def run_lab_cycle(db_factory) -> dict[str, Any]:
 
     with db_factory() as c:
         snap = snapshot(c.execute)
+        pos_syms = [p["symbol"] for p in snap["positions"]]
+    marks = await fetch_marks(pos_syms)
+    with db_factory() as c:
+        valuation = portfolio_valuation(c.execute, marks)
+        # Update daily end equity when complete
+        if valuation.get("equity_estimate") is not None:
+            from datetime import date
+
+            c.execute(
+                """INSERT INTO lab_equity_daily(account_id, day, start_equity, end_equity)
+                   VALUES(%s,%s,%s,%s)
+                   ON CONFLICT (account_id, day) DO UPDATE
+                   SET end_equity=EXCLUDED.end_equity""",
+                (
+                    ACCOUNT_ID,
+                    date.today(),
+                    valuation["equity_estimate"],
+                    valuation["equity_estimate"],
+                ),
+            )
+        finished = _now()
+        duration_ms = int((finished - started).total_seconds() * 1000)
         c.execute(
             """UPDATE lab_executor_state SET
                  status='OK',
@@ -408,6 +444,9 @@ async def run_lab_cycle(db_factory) -> dict[str, Any]:
                 json.dumps(
                     {
                         "last_signals": {
+                            "buy": signals.get("signals_buy"),
+                            "sell": signals.get("signals_sell"),
+                            "hold": signals.get("signals_hold"),
                             "enqueued": signals.get("enqueued"),
                             "duplicates": signals.get("duplicates"),
                         },
@@ -416,10 +455,44 @@ async def run_lab_cycle(db_factory) -> dict[str, Any]:
                             "filled": orders.get("filled"),
                             "rejected": orders.get("rejected"),
                         },
+                        "valuation_status": valuation.get("valuation_status"),
                         "snapshot": {
                             "cash": snap["cash"],
                             "positions": len(snap["positions"]),
                         },
+                    }
+                ),
+            ),
+        )
+        c.execute(
+            """INSERT INTO lab_cycles(
+                started_at, finished_at, duration_ms, ok, paused,
+                symbols_scanned, signals_buy, signals_sell, signals_hold,
+                orders_generated, orders_rejected, orders_filled, errors,
+                hold_sample_json, meta_json)
+               VALUES(%s,%s,%s,TRUE,FALSE,%s,%s,%s,%s,%s,%s,%s,%s,%s::jsonb,%s::jsonb)""",
+            (
+                started,
+                finished,
+                duration_ms,
+                int(signals.get("scanned") or 0),
+                int(signals.get("signals_buy") or 0),
+                int(signals.get("signals_sell") or 0),
+                int(signals.get("signals_hold") or 0),
+                int(signals.get("enqueued") or 0) + int(exits.get("enqueued") or 0),
+                int(orders.get("rejected") or 0),
+                int(orders.get("filled") or 0),
+                int(signals.get("errors") or 0),
+                json.dumps(signals.get("hold_sample") or []),
+                json.dumps(
+                    {
+                        "exits": exits,
+                        "orders": {
+                            "processed": orders.get("processed"),
+                            "filled": orders.get("filled"),
+                            "rejected": orders.get("rejected"),
+                        },
+                        "valuation_status": valuation.get("valuation_status"),
                     }
                 ),
             ),
@@ -430,5 +503,7 @@ async def run_lab_cycle(db_factory) -> dict[str, Any]:
         "signals": signals,
         "exits": exits,
         "orders": orders,
+        "valuation": valuation,
+        "duration_ms": duration_ms,
         "note": "PAPER_ONLY lab ledger; SMA paper account untouched; Shadow AI not executing.",
     }

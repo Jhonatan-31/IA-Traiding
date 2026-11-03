@@ -100,12 +100,42 @@ def evaluate_lab_breaker(
     return False, None
 
 
-def persist_lab_breaker(execute: Callable, active: bool, reason: str | None) -> None:
+def persist_lab_breaker(
+    execute: Callable,
+    active: bool,
+    reason: str | None,
+    *,
+    evidence: dict | None = None,
+) -> None:
+    import json
+
+    prev = execute(
+        "SELECT breaker_active, breaker_reason FROM lab_executor_state WHERE id=1"
+    ).fetchone()
     execute(
         """UPDATE lab_executor_state SET
              breaker_active=%s, breaker_reason=%s, updated_at=NOW() WHERE id=1""",
         (active, reason),
     )
+    changed = (not prev) or bool(prev.get("breaker_active")) != bool(active) or (
+        active and (prev or {}).get("breaker_reason") != reason
+    )
+    if changed:
+        execute(
+            """INSERT INTO lab_breaker_events(active, reason, evidence_json)
+               VALUES(%s,%s,%s::jsonb)""",
+            (active, reason, json.dumps(evidence or {})),
+        )
+
+
+def critical_condition_still_active(execute: Callable) -> tuple[bool, str | None]:
+    """Used on resume — do not clear pause/breaker while critical reason persists."""
+    state = execute("SELECT * FROM lab_executor_state WHERE id=1").fetchone()
+    if state and state.get("breaker_active"):
+        return True, state.get("breaker_reason") or "breaker_active"
+    if not accounting_ok(execute):
+        return True, "accounting_error"
+    return False, None
 
 
 def can_buy(

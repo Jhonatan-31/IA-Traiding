@@ -58,7 +58,18 @@ def record_signal(execute, *, strategy: str, symbol: str, side: str, candle_ms: 
 async def scan_and_enqueue(db_factory, *, symbols: list[str] | None = None, limit: int = 15) -> dict[str, Any]:
     """Fetch public klines, emit SMA signals into lab_orders queue only."""
     ensure_lab_schema  # noqa — used below
-    summary = {"scanned": 0, "signals": 0, "enqueued": 0, "duplicates": 0, "errors": 0, "items": []}
+    summary = {
+        "scanned": 0,
+        "signals": 0,
+        "signals_buy": 0,
+        "signals_sell": 0,
+        "signals_hold": 0,
+        "enqueued": 0,
+        "duplicates": 0,
+        "errors": 0,
+        "hold_sample": [],
+        "items": [],
+    }
     async with httpx.AsyncClient(
         timeout=25, headers={"User-Agent": "ResearchPaperBot/lab-executor"}
     ) as client:
@@ -99,9 +110,24 @@ async def scan_and_enqueue(db_factory, *, symbols: list[str] | None = None, limi
                     continue
                 closes = [float(c["close"]) for c in candles]
                 side = sma_cross_signal(closes)
-                if side == "HOLD":
-                    continue
                 last = candles[-1]
+                if side == "HOLD":
+                    summary["signals_hold"] += 1
+                    if len(summary["hold_sample"]) < 8:
+                        summary["hold_sample"].append(
+                            {
+                                "symbol": sym,
+                                "reason": "no_sma_cross_on_closed_bar",
+                                "candle_open_ms": int(last["open_time"]),
+                                "closed_only": True,
+                            }
+                        )
+                    continue
+                if side == "BUY":
+                    summary["signals_buy"] += 1
+                elif side == "SELL":
+                    summary["signals_sell"] += 1
+                # only closed bars used above
                 candle_ms = int(last["open_time"])
                 ref = float(last["close"])
                 with db_factory() as c:

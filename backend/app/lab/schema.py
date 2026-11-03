@@ -145,3 +145,33 @@ def ensure_lab_schema(execute: Callable) -> None:
             detail TEXT
         )"""
     )
+    execute(
+        """CREATE TABLE IF NOT EXISTS lab_cycles(
+            id BIGSERIAL PRIMARY KEY,
+            started_at TIMESTAMPTZ NOT NULL,
+            finished_at TIMESTAMPTZ,
+            duration_ms INT,
+            ok BOOLEAN,
+            paused BOOLEAN DEFAULT FALSE,
+            symbols_scanned INT DEFAULT 0,
+            signals_buy INT DEFAULT 0,
+            signals_sell INT DEFAULT 0,
+            signals_hold INT DEFAULT 0,
+            orders_generated INT DEFAULT 0,
+            orders_rejected INT DEFAULT 0,
+            orders_filled INT DEFAULT 0,
+            errors INT DEFAULT 0,
+            hold_sample_json JSONB NOT NULL DEFAULT '[]'::jsonb,
+            meta_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            error TEXT
+        )"""
+    )
+    execute(
+        """CREATE TABLE IF NOT EXISTS lab_breaker_events(
+            id BIGSERIAL PRIMARY KEY,
+            at TIMESTAMPTZ DEFAULT NOW(),
+            active BOOLEAN NOT NULL,
+            reason TEXT,
+            evidence_json JSONB NOT NULL DEFAULT '{}'::jsonb
+        )"""
+    )

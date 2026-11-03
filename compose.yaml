@@ -19,7 +19,7 @@ services:
     environment:
       DATABASE_URL: postgresql://paper:${DB_PASSWORD:?Set DB_PASSWORD}@db:5432/paper
       ML_ARTIFACT_DIR: /artifacts
-      LAB_CONTROL_TOKEN: ${LAB_CONTROL_TOKEN:-paper}
+      LAB_CONTROL_TOKEN: ${LAB_CONTROL_TOKEN:?Set LAB_CONTROL_TOKEN}
     volumes:
       - ml_artifacts:/artifacts
     depends_on:
@@ -67,7 +67,7 @@ services:
       DATABASE_URL: postgresql://paper:${DB_PASSWORD:?Set DB_PASSWORD}@db:5432/paper
       ML_ARTIFACT_DIR: /artifacts
       LAB_EVERY_SECONDS: ${LAB_EVERY_SECONDS:-300}
-      LAB_CONTROL_TOKEN: ${LAB_CONTROL_TOKEN:-paper}
+      LAB_CONTROL_TOKEN: ${LAB_CONTROL_TOKEN:?Set LAB_CONTROL_TOKEN}
       TZ: UTC
     volumes:
       - ml_artifacts:/artifacts
