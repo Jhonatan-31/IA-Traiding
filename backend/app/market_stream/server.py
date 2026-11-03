@@ -56,6 +56,7 @@ def market_status(
         "symbol": symbol,
         "interval": interval,
         "connection": fresh,
+        "registry": HUB.registry_snapshot(),
         "metrics": HUB.metrics,
         "note": "Visualization only. Does not drive SMA/Shadow/Lab execution.",
     }

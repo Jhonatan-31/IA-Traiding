@@ -51,9 +51,15 @@ type LiveMsg = {
   source?: string;
   hub_recv_ms?: number;
   server_send_ms?: number;
-  binance_to_hub_ms?: number;
+  binance_to_hub_ms?: number | null;
+  hub_internal_ms?: number | null;
   last_trade_time_ms?: number;
   trade_count?: number;
+};
+
+type PendingTick = LiveMsg & {
+  browser_recv_perf: number;
+  browser_recv_wall: number;
 };
 
 function wsUrl(symbol: string, interval: string) {
@@ -91,11 +97,27 @@ export default function ChartsPage() {
   const [msgCount, setMsgCount] = useState(0);
   const [latUi, setLatUi] = useState<{
     binanceHub: number | null;
-    hubBrowser: number | null;
-    visual: number | null;
+    hubInternal: number | null;
+    browserPaint: number | null;
+    tradeAge: number | null;
+    clockSkew: number | null;
     tradeTime: number | null;
     source: string;
-  }>({ binanceHub: null, hubBrowser: null, visual: null, tradeTime: null, source: "—" });
+    p50: number | null;
+    p95: number | null;
+    p99: number | null;
+  }>({
+    binanceHub: null,
+    hubInternal: null,
+    browserPaint: null,
+    tradeAge: null,
+    clockSkew: null,
+    tradeTime: null,
+    source: "—",
+    p50: null,
+    p95: null,
+    p99: null,
+  });
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const lastOpenRef = useRef<number | null>(null);
@@ -105,13 +127,23 @@ export default function ChartsPage() {
   const candlesCacheRef = useRef<Map<string, CandleBar[]>>(new Map());
   const liveFollowRef = useRef(liveFollow);
   liveFollowRef.current = liveFollow;
-  const pendingTickRef = useRef<LiveMsg | null>(null);
+  const pendingTickRef = useRef<PendingTick | null>(null);
   const rafRef = useRef<number>(0);
   const tickCountRef = useRef(0);
   const priceFlashRef = useRef<HTMLSpanElement | null>(null);
   const lastPriceRef = useRef<number | null>(null);
-  const latSamplesRef = useRef<number[]>([]);
+  const paintSamplesRef = useRef<number[]>([]);
   const lastUiPushRef = useRef(0);
+
+  function pct(samples: number[], p: number): number | null {
+    if (!samples.length) return null;
+    const xs = [...samples].sort((a, b) => a - b);
+    const i = Math.min(
+      xs.length - 1,
+      Math.max(0, Math.round((p / 100) * (xs.length - 1)))
+    );
+    return xs[i];
+  }
 
   const resetKey = `${symbol}:${interval}`;
 
@@ -218,8 +250,9 @@ export default function ChartsPage() {
       rafRef.current = 0;
       const msg = pendingTickRef.current;
       if (!msg || msg.candle_open_ms == null) return;
-      const visualAt = performance.now();
-      const browserRecv = Date.now();
+      const paintAt = performance.now();
+      const browserPaint =
+        paintAt >= msg.browser_recv_perf ? paintAt - msg.browser_recv_perf : null;
       const candle: Candle = {
         open_time: msg.candle_open_ms,
         open: msg.open!,
@@ -237,38 +270,54 @@ export default function ChartsPage() {
           candle.close >= candle.open ? "up" : "down";
       }
       const binanceHub =
-        msg.binance_to_hub_ms ??
-        (msg.hub_recv_ms != null && msg.event_time_ms != null
-          ? msg.hub_recv_ms - msg.event_time_ms
-          : null);
-      const hubBrowser =
-        msg.server_send_ms != null ? browserRecv - msg.server_send_ms : null;
-      if (hubBrowser != null && hubBrowser >= 0 && hubBrowser < 5000) {
-        latSamplesRef.current.push(hubBrowser);
-        if (latSamplesRef.current.length > 300) {
-          latSamplesRef.current = latSamplesRef.current.slice(-300);
+        msg.binance_to_hub_ms != null && msg.binance_to_hub_ms >= 0
+          ? msg.binance_to_hub_ms
+          : null;
+      const hubInternal =
+        msg.hub_internal_ms != null && msg.hub_internal_ms >= 0
+          ? msg.hub_internal_ms
+          : null;
+      // Wall delta server_send→browser: estimate clock skew, NOT hop latency
+      const clockSkew =
+        msg.server_send_ms != null
+          ? msg.browser_recv_wall - msg.server_send_ms
+          : null;
+      const tradeTs = msg.last_trade_time_ms ?? msg.event_time_ms ?? null;
+      const tradeAge =
+        tradeTs != null ? Math.max(0, msg.browser_recv_wall - tradeTs) : null;
+      if (browserPaint != null && browserPaint < 2000) {
+        paintSamplesRef.current.push(browserPaint);
+        if (paintSamplesRef.current.length > 300) {
+          paintSamplesRef.current = paintSamplesRef.current.slice(-300);
         }
       }
-      // Chart updates every frame; React state throttled (~10 Hz) for labels
       const now = Date.now();
       if (now - lastUiPushRef.current > 100) {
         lastUiPushRef.current = now;
         setLatUi({
           binanceHub,
-          hubBrowser,
-          visual: hubBrowser,
-          tradeTime: msg.last_trade_time_ms ?? msg.event_time_ms ?? null,
+          hubInternal,
+          browserPaint,
+          tradeAge,
+          clockSkew,
+          tradeTime: tradeTs,
           source: msg.source || msg.type,
+          p50: pct(paintSamplesRef.current, 50),
+          p95: pct(paintSamplesRef.current, 95),
+          p99: pct(paintSamplesRef.current, 99),
         });
         setLiveCandle(candle);
         setLastEventMs(msg.event_time_ms ?? msg.candle_open_ms);
         setMsgCount(tickCountRef.current);
       }
-      void visualAt;
     }
 
     function scheduleTick(msg: LiveMsg) {
-      pendingTickRef.current = msg;
+      pendingTickRef.current = {
+        ...msg,
+        browser_recv_perf: performance.now(),
+        browser_recv_wall: Date.now(),
+      };
       if (!rafRef.current) {
         rafRef.current = window.requestAnimationFrame(flushTick);
       }
@@ -520,10 +569,22 @@ export default function ChartsPage() {
                 : ""}
             {` · src ${latUi.source}`}
             {latUi.binanceHub != null
-              ? ` · Binance→hub ${Math.round(latUi.binanceHub)}ms`
+              ? ` · B→hub ${Math.round(latUi.binanceHub)}ms`
               : ""}
-            {latUi.hubBrowser != null
-              ? ` · hub→UI ${Math.round(latUi.hubBrowser)}ms`
+            {latUi.hubInternal != null
+              ? ` · hubΔ ${Math.round(latUi.hubInternal)}ms`
+              : ""}
+            {latUi.browserPaint != null
+              ? ` · paint ${Math.round(latUi.browserPaint)}ms`
+              : ""}
+            {latUi.tradeAge != null
+              ? ` · age ${Math.round(latUi.tradeAge)}ms`
+              : ""}
+            {latUi.clockSkew != null
+              ? ` · skew~${Math.round(latUi.clockSkew)}ms`
+              : ""}
+            {latUi.p50 != null
+              ? ` · paint p50/95/99 ${Math.round(latUi.p50)}/${Math.round(latUi.p95 ?? 0)}/${Math.round(latUi.p99 ?? 0)}`
               : ""}
             {loadingOlder ? " · cargando historial…" : ""}
             {historyEnd ? " · fin historial" : ""}
