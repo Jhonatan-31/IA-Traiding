@@ -14,6 +14,7 @@ from fastapi import FastAPI, HTTPException, Query
 from psycopg.rows import dict_row
 
 from . import alerts as alerts_mod
+from . import chart_overlay
 from . import indicators
 from . import ohlcv as ohlcv_mod
 from . import risk as risk_mod
@@ -851,26 +852,41 @@ async def candles(
     interval: str = Query("1h"),
     limit: int = Query(300, ge=10, le=1000),
     indicators_flag: bool = Query(True, alias="indicators"),
+    end_time: int | None = Query(
+        None, description="Binance endTime (ms) for historical pagination"
+    ),
 ):
     try:
         async with httpx.AsyncClient(
             timeout=25, headers={"User-Agent": "ResearchPaperBot/0.5"}
         ) as client:
-            payload = await ohlcv_mod.fetch_klines(client, symbol, interval, limit)
+            payload = await ohlcv_mod.fetch_klines(
+                client, symbol, interval, limit, end_time=end_time
+            )
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except RuntimeError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
 
+    last_close = None
+    if payload.get("candles"):
+        last_close = float(payload["candles"][-1]["close"])
+
     with db() as c:
-        markers = list(
-            c.execute(
-                """SELECT id, at, side, qty, price, candle_ms, strategy, reason
-                   FROM trades WHERE symbol=%s ORDER BY id""",
-                (payload["symbol"],),
-            )
+        markers = chart_overlay.build_trade_markers(c.execute, payload["symbol"])
+        overlays = chart_overlay.build_open_position_overlays(
+            c.execute, payload["symbol"], mark_price=last_close
         )
+    # Backward compatible: trade_markers keeps SMA-shaped fields + extras
     payload["trade_markers"] = serial(markers)
+    payload["markers"] = serial(markers)
+    payload["position_overlays"] = serial(overlays)
+    payload["history_cursor"] = {
+        "oldest_open_ms": payload["candles"][0]["open_time"] if payload["candles"] else None,
+        "newest_open_ms": payload["candles"][-1]["open_time"] if payload["candles"] else None,
+        "end_time_requested": end_time,
+        "has_more": len(payload["candles"]) >= limit,
+    }
 
     if indicators_flag:
         cs = payload["candles"]
@@ -879,7 +895,14 @@ async def candles(
         highs = [x["high"] for x in cs]
         lows = [x["low"] for x in cs]
         closes = [x["close"] for x in cs]
-        payload["indicators"] = indicators.compute_bundle(opens, highs, lows, closes)
+        bundle = indicators.compute_bundle(opens, highs, lows, closes)
+        # Mark last bar as preliminary when forming (visualization only).
+        forming = bool(cs) and not cs[-1].get("is_closed", True)
+        payload["indicators"] = bundle
+        payload["indicators_meta"] = {
+            "last_bar_preliminary": forming,
+            "note": "Valores de la vela abierta son preliminares; el motor usa solo cerradas.",
+        }
     return payload
 
 

@@ -85,14 +85,20 @@ async def fetch_klines(
     interval: str,
     limit: int = DEFAULT_LIMIT,
     use_cache: bool = True,
+    end_time: int | None = None,
 ) -> dict[str, Any]:
     symbol = validate_symbol(symbol)
     interval = validate_interval(interval)
     limit = validate_limit(limit)
-    key = f"{symbol}:{interval}:{limit}"
+    if end_time is not None:
+        end_time = int(end_time)
+        if end_time <= 0:
+            raise ValueError("end_time must be positive ms")
+    # Historical pages (end_time set) skip shared live cache to avoid collisions.
+    key = f"{symbol}:{interval}:{limit}:{end_time or 'live'}"
     now = time.time()
     ttl = CACHE_TTL_SEC[interval]
-    if use_cache and key in _cache:
+    if use_cache and end_time is None and key in _cache:
         ts, payload = _cache[key]
         if now - ts < ttl:
             _stats["hits"] += 1
@@ -102,9 +108,16 @@ async def fetch_klines(
 
     _stats["misses"] += 1
     try:
+        params: dict[str, Any] = {
+            "symbol": symbol,
+            "interval": interval,
+            "limit": limit,
+        }
+        if end_time is not None:
+            params["endTime"] = end_time
         r = await client.get(
             BASE + "/klines",
-            params={"symbol": symbol, "interval": interval, "limit": limit},
+            params=params,
             timeout=25,
         )
         if r.status_code in (418, 429):
@@ -140,5 +153,6 @@ async def fetch_klines(
         "cache": "MISS",
         "disclaimer": "Datos públicos de mercado. La vela en formación no debe usarse para señales.",
     }
-    _cache[key] = (now, {k: v for k, v in payload.items() if k != "cache"})
+    if end_time is None:
+        _cache[key] = (now, {k: v for k, v in payload.items() if k != "cache"})
     return payload

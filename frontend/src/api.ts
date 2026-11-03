@@ -176,6 +176,36 @@ export type Candle = {
   is_closed: boolean;
 };
 
+export type ChartMarker = {
+  id: number;
+  at: string | null;
+  side: string;
+  qty: number | null;
+  price: number | null;
+  candle_ms: number;
+  strategy: string | null;
+  reason: string | null;
+  ledger?: string;
+  kind?: string;
+  source?: string;
+  label?: string;
+};
+
+export type ChartPositionOverlay = {
+  ledger: string;
+  symbol: string;
+  qty: number;
+  entry_price: number | null;
+  mark_price: number | null;
+  unrealized_pnl: number | null;
+  stop_loss_price: number | null;
+  take_profit_price: number | null;
+  opened_at?: string | null;
+  bars_remaining?: number | null;
+  max_hold_bars?: number | null;
+  note?: string;
+};
+
 export type CandleResponse = {
   symbol: string;
   interval: string;
@@ -185,16 +215,15 @@ export type CandleResponse = {
   forming: Candle | null;
   candles: Candle[];
   cache: string;
-  trade_markers: Array<{
-    id: number;
-    at: string;
-    side: string;
-    qty: number;
-    price: number;
-    candle_ms: number;
-    strategy: string | null;
-    reason: string | null;
-  }>;
+  trade_markers: ChartMarker[];
+  markers?: ChartMarker[];
+  position_overlays?: ChartPositionOverlay[];
+  history_cursor?: {
+    oldest_open_ms: number | null;
+    newest_open_ms: number | null;
+    end_time_requested: number | null;
+    has_more: boolean;
+  };
   indicators?: {
     sma10: (number | null)[];
     sma20: (number | null)[];
@@ -215,6 +244,10 @@ export type CandleResponse = {
       middle: (number | null)[];
       lower: (number | null)[];
     };
+  };
+  indicators_meta?: {
+    last_bar_preliminary: boolean;
+    note?: string;
   };
 };
 
@@ -292,10 +325,22 @@ export const api = {
     if (!res.ok) throw new Error(`resume → HTTP ${res.status}`);
     return res.json();
   },
-  candles: (symbol: string, interval: string, limit = 300, indicators = true) =>
-    getJson<CandleResponse>(
-      `/api/candles?symbol=${encodeURIComponent(symbol)}&interval=${encodeURIComponent(interval)}&limit=${limit}&indicators=${indicators}`
-    ),
+  candles: (
+    symbol: string,
+    interval: string,
+    limit = 300,
+    indicators = true,
+    endTime?: number
+  ) => {
+    const q = new URLSearchParams({
+      symbol,
+      interval,
+      limit: String(limit),
+      indicators: String(indicators),
+    });
+    if (endTime != null) q.set("end_time", String(endTime));
+    return getJson<CandleResponse>(`/api/candles?${q}`);
+  },
   risk: () => getJson<RiskReport>("/api/risk"),
   alerts: (status?: string) =>
     getJson<AlertRow[]>(

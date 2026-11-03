@@ -1,6 +1,20 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { api, fmtNum, fmtTime, type CandleResponse, type Position } from "../api";
+import {
+  api,
+  fmtNum,
+  fmtTime,
+  type CandleResponse,
+  type ChartMarker,
+  type ChartPositionOverlay,
+  type Position,
+} from "../api";
 import CandleChart, { type Candle } from "../components/CandleChart";
+import {
+  INTERVAL_MS,
+  mergeCandles,
+  shouldApplyLive,
+  type CandleBar,
+} from "../charts/candleState";
 
 const INTERVALS = ["1m", "5m", "15m", "1h", "4h", "1d"] as const;
 const QUICK_SYMBOLS = ["BTCUSDT", "ETHUSDT", "SOLUSDT"] as const;
@@ -16,6 +30,7 @@ const DEFAULT_TOGGLES: Record<string, boolean> = {
   bollinger: false,
   rsi: false,
   macd: false,
+  atr: false,
 };
 
 type ConnState = "CONNECTED" | "RECONNECTING" | "STALE" | "DISCONNECTED";
@@ -38,19 +53,33 @@ type LiveMsg = {
 
 function wsUrl(symbol: string, interval: string) {
   const proto = window.location.protocol === "https:" ? "wss" : "ws";
-  const host = window.location.host;
-  return `${proto}://${host}/ws/market?symbol=${encodeURIComponent(symbol)}&interval=${encodeURIComponent(interval)}`;
+  return `${proto}://${window.location.host}/ws/market?symbol=${encodeURIComponent(symbol)}&interval=${encodeURIComponent(interval)}`;
 }
 
 export default function ChartsPage() {
   const [symbol, setSymbol] = useState("BTCUSDT");
   const [interval, setInterval] = useState<(typeof INTERVALS)[number]>("1m");
   const [positions, setPositions] = useState<Position[]>([]);
-  const [data, setData] = useState<CandleResponse | null>(null);
+  const [candles, setCandles] = useState<CandleBar[]>([]);
+  const [indicators, setIndicators] = useState<CandleResponse["indicators"]>();
+  const [indicatorsMeta, setIndicatorsMeta] =
+    useState<CandleResponse["indicators_meta"]>();
+  const [markers, setMarkers] = useState<ChartMarker[]>([]);
+  const [overlays, setOverlays] = useState<ChartPositionOverlay[]>([]);
+  const [meta, setMeta] = useState<{ cache?: string; fetched_at?: string; closed?: number }>(
+    {}
+  );
   const [liveCandle, setLiveCandle] = useState<Candle | null>(null);
   const [toggles, setToggles] = useState(DEFAULT_TOGGLES);
+  const [markerFilters, setMarkerFilters] = useState({
+    sma: true,
+    lab: true,
+    shadow: true,
+  });
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+  const [loadingOlder, setLoadingOlder] = useState(false);
+  const [historyEnd, setHistoryEnd] = useState(false);
   const [conn, setConn] = useState<ConnState>("DISCONNECTED");
   const [liveFollow, setLiveFollow] = useState(true);
   const [lastEventMs, setLastEventMs] = useState<number | null>(null);
@@ -59,33 +88,96 @@ export default function ChartsPage() {
   const wsRef = useRef<WebSocket | null>(null);
   const lastOpenRef = useRef<number | null>(null);
   const lastEventRef = useRef<number | null>(null);
+  const goLiveRef = useRef<(() => void) | null>(null);
+  const candlesCacheRef = useRef<Map<string, CandleBar[]>>(new Map());
+  const liveFollowRef = useRef(liveFollow);
+  liveFollowRef.current = liveFollow;
+
+  const resetKey = `${symbol}:${interval}`;
 
   useEffect(() => {
     void api.positions().then(setPositions).catch(() => undefined);
   }, []);
 
+  const applyPayload = useCallback(
+    (payload: CandleResponse, mode: "replace" | "prepend" | "append") => {
+      setMarkers((payload.markers || payload.trade_markers || []) as ChartMarker[]);
+      setOverlays((payload.position_overlays || []) as ChartPositionOverlay[]);
+      setIndicators(payload.indicators);
+      setIndicatorsMeta(payload.indicators_meta);
+      setMeta({
+        cache: payload.cache,
+        fetched_at: payload.fetched_at,
+        closed: payload.closed_count,
+      });
+      setCandles((prev) => {
+        const next = mergeCandles(prev, payload.candles, mode);
+        candlesCacheRef.current.set(resetKey, next);
+        return next;
+      });
+      if (payload.history_cursor && payload.history_cursor.has_more === false) {
+        setHistoryEnd(true);
+      }
+    },
+    [resetKey]
+  );
+
   const loadHistory = useCallback(async () => {
     setLoading(true);
     setError(null);
+    setHistoryEnd(false);
+    setLiveCandle(null);
+    lastOpenRef.current = null;
+    lastEventRef.current = null;
     try {
+      const cached = candlesCacheRef.current.get(resetKey);
+      if (cached?.length) {
+        setCandles(cached);
+      } else {
+        setCandles([]);
+      }
       const payload = await api.candles(symbol, interval, 500, true);
-      setData(payload);
-      setLiveCandle(null);
-      lastOpenRef.current = null;
-      lastEventRef.current = null;
+      setCandles([]);
+      applyPayload(payload, "replace");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Error");
-      setData(null);
+      setCandles([]);
     } finally {
       setLoading(false);
     }
-  }, [symbol, interval]);
+  }, [symbol, interval, resetKey, applyPayload]);
 
   useEffect(() => {
     void loadHistory();
   }, [loadHistory]);
 
-  // WebSocket live stream (fan-out via market-stream)
+  const loadOlder = useCallback(async () => {
+    if (loadingOlder || historyEnd || candles.length === 0) return;
+    setLoadingOlder(true);
+    try {
+      const end = candles[0].open_time - 1;
+      const payload = await api.candles(symbol, interval, 400, true, end);
+      if (!payload.candles.length) {
+        setHistoryEnd(true);
+        return;
+      }
+      const before = candles.length;
+      applyPayload(payload, "prepend");
+      // if no growth after dedupe → end
+      setTimeout(() => {
+        setCandles((cur) => {
+          if (cur.length <= before) setHistoryEnd(true);
+          return cur;
+        });
+      }, 0);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Error historial");
+    } finally {
+      setLoadingOlder(false);
+    }
+  }, [loadingOlder, historyEnd, candles, symbol, interval, applyPayload]);
+
+  // WebSocket live
   useEffect(() => {
     let stopped = false;
     let retry = 0;
@@ -140,24 +232,9 @@ export default function ChartsPage() {
         ) {
           return;
         }
-        const openMs = msg.candle_open_ms;
-        const eventMs = msg.event_time_ms ?? openMs;
-        // Reject out-of-order / stale
-        if (lastOpenRef.current != null && openMs < lastOpenRef.current) return;
-        if (
-          lastOpenRef.current === openMs &&
-          lastEventRef.current != null &&
-          eventMs < lastEventRef.current
-        ) {
-          return;
-        }
-        lastOpenRef.current = openMs;
-        lastEventRef.current = eventMs;
-        setLastEventMs(eventMs);
-        setMsgCount((n) => n + 1);
-        setConn("CONNECTED");
-        const candle: Candle = {
-          open_time: openMs,
+        const live = {
+          candle_open_ms: msg.candle_open_ms,
+          event_time_ms: msg.event_time_ms,
           open: msg.open,
           high: msg.high,
           low: msg.low,
@@ -165,12 +242,43 @@ export default function ChartsPage() {
           volume: msg.volume,
           is_closed: Boolean(msg.is_closed),
         };
+        if (!shouldApplyLive(lastOpenRef.current, lastEventRef.current, live)) {
+          return;
+        }
+        lastOpenRef.current = live.candle_open_ms;
+        lastEventRef.current = live.event_time_ms ?? live.candle_open_ms;
+        setLastEventMs(lastEventRef.current);
+        setMsgCount((n) => n + 1);
+        setConn("CONNECTED");
+        const candle: Candle = {
+          open_time: live.candle_open_ms,
+          open: live.open,
+          high: live.high,
+          low: live.low,
+          close: live.close,
+          volume: live.volume,
+          is_closed: live.is_closed,
+        };
         setLiveCandle(candle);
+        // Keep mark overlay fresh without full REST
+        setOverlays((prev) =>
+          prev.map((o) => ({
+            ...o,
+            mark_price: live.close,
+            unrealized_pnl:
+              o.entry_price != null
+                ? (live.close - o.entry_price) * o.qty
+                : o.unrealized_pnl,
+          }))
+        );
         if (msg.is_closed) {
-          // Soft refresh indicators/history after closed bar (does not drive trading)
           void api
             .candles(symbol, interval, 500, true)
-            .then(setData)
+            .then((p) => {
+              // Exploring history: merge without wiping viewport via full replace.
+              applyPayload(p, liveFollowRef.current ? "replace" : "append");
+              setLiveCandle(null);
+            })
             .catch(() => undefined);
         }
       };
@@ -196,7 +304,7 @@ export default function ChartsPage() {
       wsRef.current?.close();
       wsRef.current = null;
     };
-  }, [symbol, interval]);
+  }, [symbol, interval, applyPayload]);
 
   const options = useMemo(() => {
     const set = new Set<string>([...QUICK_SYMBOLS]);
@@ -205,8 +313,8 @@ export default function ChartsPage() {
     return Array.from(set).sort();
   }, [positions, symbol]);
 
-  const lastPrice = liveCandle?.close ?? data?.candles?.at(-1)?.close ?? null;
-  const openPos = positions.filter((p) => p.symbol === symbol);
+  const lastPrice = liveCandle?.close ?? candles.at(-1)?.close ?? null;
+  const symbolOverlays = overlays.filter((o) => o.symbol === symbol);
 
   function toggleFullscreen() {
     const el = wrapRef.current;
@@ -215,8 +323,23 @@ export default function ChartsPage() {
     else void document.exitFullscreen();
   }
 
+  function goRealtime() {
+    setLiveFollow(true);
+    goLiveRef.current?.();
+  }
+
   const connPill =
-    conn === "CONNECTED" ? "ok" : conn === "STALE" || conn === "RECONNECTING" ? "warn" : "err";
+    conn === "CONNECTED"
+      ? "ok"
+      : conn === "STALE" || conn === "RECONNECTING"
+        ? "warn"
+        : "err";
+
+  const tradesTable = markers
+    .filter((m) => markerAllowedUi(m, markerFilters))
+    .slice()
+    .reverse()
+    .slice(0, 40);
 
   return (
     <div ref={wrapRef} style={{ background: "#0b1018", minHeight: "100%" }}>
@@ -224,8 +347,8 @@ export default function ChartsPage() {
         <div>
           <h2>Terminal de gráficas</h2>
           <p>
-            Lightweight Charts v4 · historial REST + vivo vía market-stream (Binance público).
-            La vela abierta es solo visualización; SMA/Shadow/Lab usan velas cerradas.
+            Lightweight Charts v4 · REST historial + WS market-stream. Predicciones Shadow ≠
+            ejecuciones. PAPER_ONLY.
           </p>
         </div>
         <div className="actions">
@@ -237,6 +360,9 @@ export default function ChartsPage() {
             onClick={() => setLiveFollow((v) => !v)}
           >
             {liveFollow ? "Seguir vivo: ON" : "Seguir vivo: OFF"}
+          </button>
+          <button className="btn primary" onClick={goRealtime}>
+            Volver al tiempo real
           </button>
           <button className="btn" onClick={toggleFullscreen}>
             Pantalla completa
@@ -287,8 +413,38 @@ export default function ChartsPage() {
           <span className="muted" style={{ fontSize: 12 }}>
             WS msgs: {msgCount}
             {lastEventMs ? ` · evt ${new Date(lastEventMs).toISOString()}` : ""}
+            {loadingOlder ? " · cargando historial…" : ""}
+            {historyEnd ? " · fin historial" : ""}
+            {` · bars ${candles.length}`}
+            {` · step ${INTERVAL_MS[interval] ?? "?"}ms`}
           </span>
         </div>
+      </div>
+
+      <div className="card" style={{ marginBottom: 12 }}>
+        <h3>Marcadores por ledger</h3>
+        <div className="actions">
+          {(
+            [
+              ["sma", "SMA ejecuciones"],
+              ["lab", "Lab ejecuciones"],
+              ["shadow", "Shadow predicciones"],
+            ] as const
+          ).map(([k, label]) => (
+            <button
+              key={k}
+              className={`btn ${markerFilters[k] ? "primary" : ""}`}
+              onClick={() =>
+                setMarkerFilters((f) => ({ ...f, [k]: !f[k] }))
+              }
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+        <p className="muted" style={{ fontSize: 12, marginTop: 8 }}>
+          Círculos morados = predicción Shadow (no fill). Flechas = ejecuciones paper.
+        </p>
       </div>
 
       <div className="card" style={{ marginBottom: 12 }}>
@@ -305,67 +461,156 @@ export default function ChartsPage() {
           ))}
         </div>
         <p className="muted" style={{ fontSize: 12, marginTop: 8 }}>
-          No modifican el motor SMA de producción. RSI/MACD paneles sincronizados al
-          rango visible.
+          No modifican el motor SMA de producción. RSI/MACD/ATR sincronizados al rango.
         </p>
       </div>
 
       <div className="card" style={{ marginBottom: 12 }}>
         <div className="actions" style={{ marginBottom: 10 }}>
-          <span className="pill info">Cerradas: {data?.closed_count ?? "—"}</span>
+          <span className="pill info">Cerradas: {meta.closed ?? "—"}</span>
           <span className={`pill ${liveCandle && !liveCandle.is_closed ? "warn" : "ok"}`}>
             {liveCandle && !liveCandle.is_closed
               ? "Vela abierta (live)"
               : "Esperando vela live"}
           </span>
-          <span className="pill info">Cache REST: {data?.cache ?? "—"}</span>
-          <span className="muted">Historial: {fmtTime(data?.fetched_at)}</span>
+          <span className="pill info">Cache REST: {meta.cache ?? "—"}</span>
+          <span className="muted">Historial: {fmtTime(meta.fetched_at)}</span>
         </div>
-        {!data ? (
+        {!candles.length ? (
           <p className="muted">{loading ? "Cargando velas…" : "Sin datos"}</p>
         ) : (
           <CandleChart
-            candles={data.candles}
+            resetKey={resetKey}
+            candles={candles}
             liveCandle={liveCandle}
-            indicators={data.indicators}
+            indicators={indicators}
+            indicatorsPreliminary={Boolean(indicatorsMeta?.last_bar_preliminary)}
             enabled={toggles}
-            markers={data.trade_markers}
+            markers={markers}
+            markerFilters={markerFilters}
+            positions={symbolOverlays}
             liveFollow={liveFollow}
             onUserScrollAway={() => setLiveFollow(false)}
+            onNeedOlder={() => void loadOlder()}
+            onGoLiveReady={(fn) => {
+              goLiveRef.current = fn;
+            }}
           />
         )}
       </div>
 
-      {openPos.length > 0 && (
-        <div className="card">
-          <h3>Posiciones SMA paper ({symbol})</h3>
+      {symbolOverlays.length > 0 && (
+        <div className="card" style={{ marginBottom: 12 }}>
+          <h3>Posiciones abiertas ({symbol})</h3>
           <p className="muted" style={{ fontSize: 12 }}>
-            Ledger SMA separado de Lab/Shadow. Solo referencia visual.
+            Ledgers separados. SL/TP solo cuando existen en DB (Lab).
           </p>
-          <div className="table-wrap">
-            <table className="data">
-              <thead>
-                <tr>
-                  <th>Qty</th>
-                  <th>Entrada</th>
-                  <th>Mark</th>
-                  <th>uPnL</th>
-                </tr>
-              </thead>
-              <tbody>
-                {openPos.map((p) => (
-                  <tr key={p.symbol}>
-                    <td>{fmtNum(p.qty, 6)}</td>
-                    <td>{fmtNum(p.cost / (p.qty || 1), 4)}</td>
-                    <td>{fmtNum(p.price, 4)}</td>
-                    <td>{fmtNum(p.unrealized_pnl, 4)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "repeat(auto-fit,minmax(260px,1fr))",
+              gap: 12,
+            }}
+          >
+            {symbolOverlays.map((p) => (
+              <div
+                key={p.ledger}
+                style={{
+                  border: "1px solid #2a3a55",
+                  borderRadius: 8,
+                  padding: 12,
+                  background: "#0e141d",
+                }}
+              >
+                <div className="actions" style={{ marginBottom: 8 }}>
+                  <span className="pill info">{p.ledger.toUpperCase()}</span>
+                  <span className="pill">{p.symbol}</span>
+                </div>
+                <div style={{ fontSize: 13, lineHeight: 1.6 }}>
+                  <div>Qty: {fmtNum(p.qty, 6)}</div>
+                  <div>Entrada: {fmtNum(p.entry_price, 4)}</div>
+                  <div>Mark: {fmtNum(p.mark_price, 4)}</div>
+                  <div>uPnL: {fmtNum(p.unrealized_pnl, 4)}</div>
+                  <div>SL: {p.stop_loss_price == null ? "—" : fmtNum(p.stop_loss_price, 4)}</div>
+                  <div>TP: {p.take_profit_price == null ? "—" : fmtNum(p.take_profit_price, 4)}</div>
+                  <div>
+                    Restante:{" "}
+                    {p.bars_remaining == null
+                      ? "—"
+                      : `${p.bars_remaining}/${p.max_hold_bars ?? "?"} barras`}
+                  </div>
+                  <div className="muted" style={{ fontSize: 11 }}>
+                    {p.opened_at ? `Desde ${fmtTime(p.opened_at)}` : p.note}
+                  </div>
+                </div>
+              </div>
+            ))}
           </div>
         </div>
       )}
+
+      <div className="card">
+        <h3>Operaciones / predicciones visibles</h3>
+        <div className="table-wrap">
+          <table className="data">
+            <thead>
+              <tr>
+                <th>Ledger</th>
+                <th>Tipo</th>
+                <th>Side</th>
+                <th>At</th>
+                <th>Price</th>
+                <th>Qty</th>
+                <th>Strategy</th>
+                <th>Motivo</th>
+              </tr>
+            </thead>
+            <tbody>
+              {tradesTable.map((m) => (
+                <tr key={`${m.ledger}-${m.source}-${m.id}`}>
+                  <td>{m.ledger || m.source}</td>
+                  <td>
+                    {m.kind === "prediction" ? (
+                      <span className="pill warn">predicción</span>
+                    ) : (
+                      <span className="pill ok">ejecución</span>
+                    )}
+                  </td>
+                  <td>{m.side}</td>
+                  <td>{fmtTime(m.at)}</td>
+                  <td>{m.price == null ? "—" : fmtNum(m.price, 4)}</td>
+                  <td>{m.qty == null ? "—" : fmtNum(m.qty, 6)}</td>
+                  <td>{m.strategy || "—"}</td>
+                  <td>{m.reason || "—"}</td>
+                </tr>
+              ))}
+              {!tradesTable.length && (
+                <tr>
+                  <td colSpan={8} className="muted">
+                    Sin marcadores para filtros/símbolo actuales
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   );
+}
+
+function markerAllowedUi(
+  m: ChartMarker,
+  f: { sma: boolean; lab: boolean; shadow: boolean }
+) {
+  const ledger = (m.ledger || m.source || "sma").toLowerCase();
+  if (ledger.includes("lab")) return f.lab;
+  if (
+    ledger.includes("shadow") ||
+    ledger.includes("prospect") ||
+    ledger.includes("ml") ||
+    m.kind === "prediction"
+  )
+    return f.shadow;
+  return f.sma;
 }
