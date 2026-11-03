@@ -39,12 +39,19 @@ services:
     depends_on:
       db:
         condition: service_healthy
+  market-stream:
+    build: ./backend
+    command: ["python", "-m", "app.market_stream.server"]
+    restart: unless-stopped
+    environment:
+      TZ: UTC
+    # Public Binance WS fan-out only — no DB, no private keys, no orders
   dashboard:
     build: ./frontend
     restart: unless-stopped
     ports:
       - "127.0.0.1:8088:8080"
-    depends_on: [api]
+    depends_on: [api, market-stream]
   shadow-scheduler:
     build: ./backend
     command: ["python", "-m", "app.prospect.scheduler"]

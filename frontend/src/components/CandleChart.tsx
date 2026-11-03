@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import {
   ColorType,
+  CrosshairMode,
   createChart,
   type IChartApi,
   type ISeriesApi,
@@ -9,13 +10,13 @@ import {
 
 export type Candle = {
   open_time: number;
-  close_time: number;
+  close_time?: number;
   open: number;
   high: number;
   low: number;
   close: number;
   volume: number;
-  is_closed: boolean;
+  is_closed?: boolean;
 };
 
 export type TradeMarker = {
@@ -24,6 +25,7 @@ export type TradeMarker = {
   price: number;
   candle_ms: number;
   at: string;
+  source?: string;
 };
 
 export type IndicatorPack = {
@@ -35,6 +37,7 @@ export type IndicatorPack = {
   ema21?: (number | null)[];
   ema50?: (number | null)[];
   rsi14?: (number | null)[];
+  atr14?: (number | null)[];
   macd?: {
     macd: (number | null)[];
     signal: (number | null)[];
@@ -49,9 +52,12 @@ export type IndicatorPack = {
 
 type Props = {
   candles: Candle[];
+  liveCandle?: Candle | null;
   indicators?: IndicatorPack | null;
   enabled: Record<string, boolean>;
   markers: TradeMarker[];
+  liveFollow?: boolean;
+  onUserScrollAway?: () => void;
 };
 
 function lineData(candles: Candle[], values: (number | null)[] | undefined) {
@@ -73,45 +79,66 @@ function makeChart(el: HTMLElement, height: number) {
     autoSize: true,
     height,
     layout: {
-      background: { type: ColorType.Solid, color: "#121a2b" },
-      textColor: "#8fa3bb",
+      background: { type: ColorType.Solid, color: "#0e141d" },
+      textColor: "#9eb0c7",
     },
     grid: {
-      vertLines: { color: "#1c2940" },
-      horzLines: { color: "#1c2940" },
+      vertLines: { color: "#1a2433" },
+      horzLines: { color: "#1a2433" },
     },
+    crosshair: { mode: CrosshairMode.Normal },
     rightPriceScale: { borderColor: "#2a3a55" },
-    timeScale: { borderColor: "#2a3a55", timeVisible: true },
+    timeScale: {
+      borderColor: "#2a3a55",
+      timeVisible: true,
+      secondsVisible: true,
+    },
   });
 }
 
 export default function CandleChart({
   candles,
+  liveCandle,
   indicators,
   enabled,
   markers,
+  liveFollow = true,
+  onUserScrollAway,
 }: Props) {
   const mainRef = useRef<HTMLDivElement | null>(null);
   const rsiRef = useRef<HTMLDivElement | null>(null);
   const macdRef = useRef<HTMLDivElement | null>(null);
+  const chartRef = useRef<IChartApi | null>(null);
+  const candleSeriesRef = useRef<ISeriesApi<"Candlestick"> | null>(null);
+  const volumeSeriesRef = useRef<ISeriesApi<"Histogram"> | null>(null);
+  const followRef = useRef(liveFollow);
+  followRef.current = liveFollow;
 
+  // Mount chart once per candles baseline / indicator toggle (not every live tick)
   useEffect(() => {
-    if (!mainRef.current) return;
+    if (!mainRef.current || candles.length === 0) return;
     const charts: IChartApi[] = [];
-    const chart = makeChart(mainRef.current, 420);
+    const chart = makeChart(mainRef.current, 460);
     charts.push(chart);
+    chartRef.current = chart;
 
     const candleSeries = chart.addCandlestickSeries({
-      upColor: "#2dd4bf",
-      downColor: "#f07178",
+      upColor: "#26a69a",
+      downColor: "#ef5350",
       borderVisible: false,
-      wickUpColor: "#2dd4bf",
-      wickDownColor: "#f07178",
+      wickUpColor: "#26a69a",
+      wickDownColor: "#ef5350",
+      lastValueVisible: true,
+      priceLineVisible: true,
     });
+    candleSeriesRef.current = candleSeries;
+
     const volumeSeries = chart.addHistogramSeries({
       priceFormat: { type: "volume" },
       priceScaleId: "vol",
+      lastValueVisible: false,
     });
+    volumeSeriesRef.current = volumeSeries;
     chart.priceScale("vol").applyOptions({
       scaleMargins: { top: 0.8, bottom: 0 },
     });
@@ -129,20 +156,24 @@ export default function CandleChart({
       candles.map((c) => ({
         time: Math.floor(c.open_time / 1000) as UTCTimestamp,
         value: c.volume,
-        color: c.close >= c.open ? "rgba(45,212,191,0.35)" : "rgba(240,113,120,0.35)",
+        color:
+          c.close >= c.open ? "rgba(38,166,154,0.4)" : "rgba(239,83,80,0.4)",
       }))
     );
 
-    const lines: ISeriesApi<"Line">[] = [];
     const addLine = (
       key: string,
       values: (number | null)[] | undefined,
       color: string
     ) => {
       if (!enabled[key] || !values) return;
-      const s = chart.addLineSeries({ color, lineWidth: 2, priceLineVisible: false });
+      const s = chart.addLineSeries({
+        color,
+        lineWidth: 2,
+        priceLineVisible: false,
+        lastValueVisible: false,
+      });
       s.setData(lineData(candles, values));
-      lines.push(s);
     };
 
     addLine("sma10", indicators?.sma10, "#e6c07b");
@@ -163,69 +194,120 @@ export default function CandleChart({
         const candle = candles.find(
           (c) =>
             c.close_time === m.candle_ms ||
-            (c.open_time <= m.candle_ms && c.close_time >= m.candle_ms)
+            (c.open_time <= m.candle_ms &&
+              (c.close_time ?? c.open_time + 60_000) >= m.candle_ms)
         );
         const t = candle
           ? Math.floor(candle.open_time / 1000)
           : Math.floor(m.candle_ms / 1000);
+        const shadow = (m.source || "").toLowerCase().includes("shadow");
         return {
           time: t as UTCTimestamp,
           position: m.side === "BUY" ? ("belowBar" as const) : ("aboveBar" as const),
-          color: m.side === "BUY" ? "#2dd4bf" : "#f07178",
+          color: shadow
+            ? "#c678dd"
+            : m.side === "BUY"
+              ? "#26a69a"
+              : "#ef5350",
           shape: m.side === "BUY" ? ("arrowUp" as const) : ("arrowDown" as const),
-          text: m.side,
+          text: shadow ? `SH ${m.side}` : m.side,
         };
       })
       .sort((a, b) => Number(a.time) - Number(b.time));
     if (markerData.length) candleSeries.setMarkers(markerData);
+
     chart.timeScale().fitContent();
 
+    const onRange = () => {
+      if (!followRef.current) return;
+      // if user dragged away while follow was on, notify parent once via logical check
+    };
+    chart.timeScale().subscribeVisibleLogicalRangeChange(() => {
+      onRange();
+      if (!followRef.current && onUserScrollAway) onUserScrollAway();
+    });
+
     if (rsiRef.current && enabled.rsi && indicators?.rsi14) {
-      const rsiChart = makeChart(rsiRef.current, 140);
+      const rsiChart = makeChart(rsiRef.current, 130);
       charts.push(rsiChart);
       const s = rsiChart.addLineSeries({ color: "#e6c07b", lineWidth: 2 });
       s.setData(lineData(candles, indicators.rsi14));
-      rsiChart.timeScale().fitContent();
       chart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
         if (range) rsiChart.timeScale().setVisibleLogicalRange(range);
       });
     }
 
     if (macdRef.current && enabled.macd && indicators?.macd) {
-      const macdChart = makeChart(macdRef.current, 150);
+      const macdChart = makeChart(macdRef.current, 140);
       charts.push(macdChart);
       const hist = macdChart.addHistogramSeries({ priceScaleId: "hist" });
       hist.setData(
         lineData(candles, indicators.macd.histogram).map((d) => ({
           time: d.time,
           value: d.value,
-          color: d.value >= 0 ? "rgba(45,212,191,0.5)" : "rgba(240,113,120,0.5)",
+          color: d.value >= 0 ? "rgba(38,166,154,0.45)" : "rgba(239,83,80,0.45)",
         }))
       );
-      const macdLine = macdChart.addLineSeries({ color: "#61afef", lineWidth: 2 });
-      macdLine.setData(lineData(candles, indicators.macd.macd));
-      const sig = macdChart.addLineSeries({ color: "#c678dd", lineWidth: 2 });
-      sig.setData(lineData(candles, indicators.macd.signal));
-      macdChart.timeScale().fitContent();
+      macdChart
+        .addLineSeries({ color: "#61afef", lineWidth: 2 })
+        .setData(lineData(candles, indicators.macd.macd));
+      macdChart
+        .addLineSeries({ color: "#c678dd", lineWidth: 2 })
+        .setData(lineData(candles, indicators.macd.signal));
       chart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
         if (range) macdChart.timeScale().setVisibleLogicalRange(range);
       });
     }
 
+    const ro = new ResizeObserver(() => {
+      // autoSize handles most; force apply width
+      chart.applyOptions({ width: mainRef.current?.clientWidth });
+    });
+    if (mainRef.current) ro.observe(mainRef.current);
+
     return () => {
+      ro.disconnect();
+      candleSeriesRef.current = null;
+      volumeSeriesRef.current = null;
+      chartRef.current = null;
       charts.forEach((c) => c.remove());
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- live ticks must not remount
   }, [candles, indicators, enabled, markers]);
+
+  // Incremental live candle update (no setData rebuild)
+  useEffect(() => {
+    if (!liveCandle || !candleSeriesRef.current || !volumeSeriesRef.current) return;
+    const t = Math.floor(liveCandle.open_time / 1000) as UTCTimestamp;
+    candleSeriesRef.current.update({
+      time: t,
+      open: liveCandle.open,
+      high: liveCandle.high,
+      low: liveCandle.low,
+      close: liveCandle.close,
+    });
+    volumeSeriesRef.current.update({
+      time: t,
+      value: liveCandle.volume,
+      color:
+        liveCandle.close >= liveCandle.open
+          ? "rgba(38,166,154,0.4)"
+          : "rgba(239,83,80,0.4)",
+    });
+    if (followRef.current && chartRef.current) {
+      chartRef.current.timeScale().scrollToRealTime();
+    }
+  }, [liveCandle]);
 
   return (
     <div>
-      <div ref={mainRef} style={{ width: "100%", height: 420 }} />
+      <div ref={mainRef} style={{ width: "100%", height: 460 }} />
       {enabled.rsi && (
         <div style={{ marginTop: 8 }}>
           <div className="muted" style={{ fontSize: 12, marginBottom: 4 }}>
             RSI14
           </div>
-          <div ref={rsiRef} style={{ width: "100%", height: 140 }} />
+          <div ref={rsiRef} style={{ width: "100%", height: 130 }} />
         </div>
       )}
       {enabled.macd && (
@@ -233,9 +315,14 @@ export default function CandleChart({
           <div className="muted" style={{ fontSize: 12, marginBottom: 4 }}>
             MACD
           </div>
-          <div ref={macdRef} style={{ width: "100%", height: 150 }} />
+          <div ref={macdRef} style={{ width: "100%", height: 140 }} />
         </div>
       )}
     </div>
   );
+}
+
+/** Expose scroll helper for parent buttons */
+export function scrollChartToRealtime(chartHost?: HTMLElement | null) {
+  void chartHost;
 }
