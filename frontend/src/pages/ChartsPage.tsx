@@ -8,9 +8,8 @@ import {
   type ChartPositionOverlay,
   type Position,
 } from "../api";
-import CandleChart, { type Candle } from "../components/CandleChart";
+import CandleChart, { type Candle, type LiveChartApi } from "../components/CandleChart";
 import {
-  INTERVAL_MS,
   mergeCandles,
   shouldApplyLive,
   type CandleBar,
@@ -49,6 +48,12 @@ type LiveMsg = {
   is_closed?: boolean;
   state?: ConnState;
   error?: string;
+  source?: string;
+  hub_recv_ms?: number;
+  server_send_ms?: number;
+  binance_to_hub_ms?: number;
+  last_trade_time_ms?: number;
+  trade_count?: number;
 };
 
 function wsUrl(symbol: string, interval: string) {
@@ -84,14 +89,29 @@ export default function ChartsPage() {
   const [liveFollow, setLiveFollow] = useState(true);
   const [lastEventMs, setLastEventMs] = useState<number | null>(null);
   const [msgCount, setMsgCount] = useState(0);
+  const [latUi, setLatUi] = useState<{
+    binanceHub: number | null;
+    hubBrowser: number | null;
+    visual: number | null;
+    tradeTime: number | null;
+    source: string;
+  }>({ binanceHub: null, hubBrowser: null, visual: null, tradeTime: null, source: "—" });
   const wrapRef = useRef<HTMLDivElement | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
   const lastOpenRef = useRef<number | null>(null);
   const lastEventRef = useRef<number | null>(null);
   const goLiveRef = useRef<(() => void) | null>(null);
+  const liveApiRef = useRef<LiveChartApi | null>(null);
   const candlesCacheRef = useRef<Map<string, CandleBar[]>>(new Map());
   const liveFollowRef = useRef(liveFollow);
   liveFollowRef.current = liveFollow;
+  const pendingTickRef = useRef<LiveMsg | null>(null);
+  const rafRef = useRef<number>(0);
+  const tickCountRef = useRef(0);
+  const priceFlashRef = useRef<HTMLSpanElement | null>(null);
+  const lastPriceRef = useRef<number | null>(null);
+  const latSamplesRef = useRef<number[]>([]);
+  const lastUiPushRef = useRef(0);
 
   const resetKey = `${symbol}:${interval}`;
 
@@ -177,20 +197,81 @@ export default function ChartsPage() {
     }
   }, [loadingOlder, historyEnd, candles, symbol, interval, applyPayload]);
 
-  // WebSocket live
+  // WebSocket live — trade ticks via rAF (no React re-render per trade)
   useEffect(() => {
     let stopped = false;
     let retry = 0;
     let timer: number | undefined;
     let staleTimer: number | undefined;
+    let uiTimer: number | undefined;
 
     function clearStale() {
       if (staleTimer) window.clearInterval(staleTimer);
       staleTimer = window.setInterval(() => {
-        if (lastEventRef.current && Date.now() - lastEventRef.current > 15000) {
+        if (lastEventRef.current && Date.now() - lastEventRef.current > 5000) {
           setConn("STALE");
         }
-      }, 3000);
+      }, 1000);
+    }
+
+    function flushTick() {
+      rafRef.current = 0;
+      const msg = pendingTickRef.current;
+      if (!msg || msg.candle_open_ms == null) return;
+      const visualAt = performance.now();
+      const browserRecv = Date.now();
+      const candle: Candle = {
+        open_time: msg.candle_open_ms,
+        open: msg.open!,
+        high: msg.high!,
+        low: msg.low!,
+        close: msg.close!,
+        volume: msg.volume!,
+        is_closed: Boolean(msg.is_closed),
+      };
+      liveApiRef.current?.applyLive(candle);
+      lastPriceRef.current = candle.close;
+      if (priceFlashRef.current) {
+        priceFlashRef.current.textContent = fmtNum(candle.close, 4);
+        priceFlashRef.current.dataset.dir =
+          candle.close >= candle.open ? "up" : "down";
+      }
+      const binanceHub =
+        msg.binance_to_hub_ms ??
+        (msg.hub_recv_ms != null && msg.event_time_ms != null
+          ? msg.hub_recv_ms - msg.event_time_ms
+          : null);
+      const hubBrowser =
+        msg.server_send_ms != null ? browserRecv - msg.server_send_ms : null;
+      if (hubBrowser != null && hubBrowser >= 0 && hubBrowser < 5000) {
+        latSamplesRef.current.push(hubBrowser);
+        if (latSamplesRef.current.length > 300) {
+          latSamplesRef.current = latSamplesRef.current.slice(-300);
+        }
+      }
+      // Chart updates every frame; React state throttled (~10 Hz) for labels
+      const now = Date.now();
+      if (now - lastUiPushRef.current > 100) {
+        lastUiPushRef.current = now;
+        setLatUi({
+          binanceHub,
+          hubBrowser,
+          visual: hubBrowser,
+          tradeTime: msg.last_trade_time_ms ?? msg.event_time_ms ?? null,
+          source: msg.source || msg.type,
+        });
+        setLiveCandle(candle);
+        setLastEventMs(msg.event_time_ms ?? msg.candle_open_ms);
+        setMsgCount(tickCountRef.current);
+      }
+      void visualAt;
+    }
+
+    function scheduleTick(msg: LiveMsg) {
+      pendingTickRef.current = msg;
+      if (!rafRef.current) {
+        rafRef.current = window.requestAnimationFrame(flushTick);
+      }
     }
 
     function connect() {
@@ -221,7 +302,13 @@ export default function ChartsPage() {
           setError(msg.error || "ws_error");
           return;
         }
-        if (msg.type !== "kline" && msg.type !== "snapshot") return;
+        if (
+          msg.type !== "kline" &&
+          msg.type !== "snapshot" &&
+          msg.type !== "candle_tick"
+        ) {
+          return;
+        }
         if (
           msg.candle_open_ms == null ||
           msg.open == null ||
@@ -247,39 +334,31 @@ export default function ChartsPage() {
         }
         lastOpenRef.current = live.candle_open_ms;
         lastEventRef.current = live.event_time_ms ?? live.candle_open_ms;
-        setLastEventMs(lastEventRef.current);
-        setMsgCount((n) => n + 1);
+        tickCountRef.current += 1;
         setConn("CONNECTED");
-        const candle: Candle = {
-          open_time: live.candle_open_ms,
-          open: live.open,
-          high: live.high,
-          low: live.low,
-          close: live.close,
-          volume: live.volume,
-          is_closed: live.is_closed,
-        };
-        setLiveCandle(candle);
-        // Keep mark overlay fresh without full REST
-        setOverlays((prev) =>
-          prev.map((o) => ({
-            ...o,
-            mark_price: live.close,
-            unrealized_pnl:
-              o.entry_price != null
-                ? (live.close - o.entry_price) * o.qty
-                : o.unrealized_pnl,
-          }))
-        );
-        if (msg.is_closed) {
-          void api
-            .candles(symbol, interval, 500, true)
-            .then((p) => {
-              // Exploring history: merge without wiping viewport via full replace.
-              applyPayload(p, liveFollowRef.current ? "replace" : "append");
-              setLiveCandle(null);
-            })
-            .catch(() => undefined);
+        scheduleTick(msg);
+
+        if (msg.is_closed || msg.type === "kline") {
+          // Throttle overlay mark update on close only
+          setOverlays((prev) =>
+            prev.map((o) => ({
+              ...o,
+              mark_price: live.close,
+              unrealized_pnl:
+                o.entry_price != null
+                  ? (live.close - o.entry_price) * o.qty
+                  : o.unrealized_pnl,
+            }))
+          );
+          if (msg.is_closed) {
+            void api
+              .candles(symbol, interval, 500, true)
+              .then((p) => {
+                applyPayload(p, liveFollowRef.current ? "replace" : "append");
+                setLiveCandle(null);
+              })
+              .catch(() => undefined);
+          }
         }
       };
 
@@ -301,6 +380,8 @@ export default function ChartsPage() {
       stopped = true;
       if (timer) window.clearTimeout(timer);
       if (staleTimer) window.clearInterval(staleTimer);
+      if (uiTimer) window.clearInterval(uiTimer);
+      if (rafRef.current) cancelAnimationFrame(rafRef.current);
       wsRef.current?.close();
       wsRef.current = null;
     };
@@ -407,16 +488,46 @@ export default function ChartsPage() {
           <span className="pill info">
             {symbol} · {interval}
           </span>
+          <span
+            className={`pill ${liveCandle && !liveCandle.is_closed ? "ok" : "info"}`}
+            title="Actualización por trade stream"
+          >
+            LIVE
+          </span>
           <span className="pill info">
-            Precio: {lastPrice == null ? "—" : fmtNum(lastPrice, 4)}
+            Precio:{" "}
+            <span
+              ref={priceFlashRef}
+              style={{
+                fontVariantNumeric: "tabular-nums",
+                color:
+                  liveCandle && liveCandle.close >= liveCandle.open
+                    ? "#26a69a"
+                    : liveCandle
+                      ? "#ef5350"
+                      : undefined,
+              }}
+            >
+              {lastPrice == null ? "—" : fmtNum(lastPrice, 4)}
+            </span>
           </span>
           <span className="muted" style={{ fontSize: 12 }}>
-            WS msgs: {msgCount}
-            {lastEventMs ? ` · evt ${new Date(lastEventMs).toISOString()}` : ""}
+            ticks: {msgCount}
+            {latUi.tradeTime
+              ? ` · trade ${new Date(latUi.tradeTime).toISOString()}`
+              : lastEventMs
+                ? ` · evt ${new Date(lastEventMs).toISOString()}`
+                : ""}
+            {` · src ${latUi.source}`}
+            {latUi.binanceHub != null
+              ? ` · Binance→hub ${Math.round(latUi.binanceHub)}ms`
+              : ""}
+            {latUi.hubBrowser != null
+              ? ` · hub→UI ${Math.round(latUi.hubBrowser)}ms`
+              : ""}
             {loadingOlder ? " · cargando historial…" : ""}
             {historyEnd ? " · fin historial" : ""}
             {` · bars ${candles.length}`}
-            {` · step ${INTERVAL_MS[interval] ?? "?"}ms`}
           </span>
         </div>
       </div>
@@ -482,7 +593,7 @@ export default function ChartsPage() {
           <CandleChart
             resetKey={resetKey}
             candles={candles}
-            liveCandle={liveCandle}
+            liveCandle={null}
             indicators={indicators}
             indicatorsPreliminary={Boolean(indicatorsMeta?.last_bar_preliminary)}
             enabled={toggles}
@@ -494,6 +605,9 @@ export default function ChartsPage() {
             onNeedOlder={() => void loadOlder()}
             onGoLiveReady={(fn) => {
               goLiveRef.current = fn;
+            }}
+            onLiveApi={(api) => {
+              liveApiRef.current = api;
             }}
           />
         )}

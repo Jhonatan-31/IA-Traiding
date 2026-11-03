@@ -20,7 +20,7 @@ log = logging.getLogger("market_stream")
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     await HUB.start()
-    log.info("market-stream hub started (Binance public klines only)")
+    log.info("market-stream hub started (Binance public trade + kline)")
     yield
     await HUB.stop()
     log.info("market-stream hub stopped")
@@ -64,7 +64,7 @@ def market_status(
 @app.websocket("/ws/market")
 async def ws_market(websocket: WebSocket):
     await websocket.accept()
-    queue: asyncio.Queue = asyncio.Queue(maxsize=256)
+    queue: asyncio.Queue = asyncio.Queue(maxsize=512)
     subscribed = False
     try:
         # Optional query defaults

@@ -75,9 +75,15 @@ export type IndicatorPack = {
   };
 };
 
+export type LiveChartApi = {
+  applyLive: (candle: Candle) => void;
+  scrollToRealtime: () => void;
+};
+
 type Props = {
   resetKey: string;
   candles: Candle[];
+  /** Prefer imperative applyLive via onLiveApi for trade ticks (avoids React re-render). */
   liveCandle?: Candle | null;
   indicators?: IndicatorPack | null;
   indicatorsPreliminary?: boolean;
@@ -89,6 +95,7 @@ type Props = {
   onUserScrollAway?: () => void;
   onNeedOlder?: () => void;
   onGoLiveReady?: (fn: () => void) => void;
+  onLiveApi?: (api: LiveChartApi | null) => void;
 };
 
 function lineData(candles: Candle[], values: (number | null)[] | undefined) {
@@ -155,6 +162,7 @@ export default function CandleChart({
   onUserScrollAway,
   onNeedOlder,
   onGoLiveReady,
+  onLiveApi,
 }: Props) {
   const mainRef = useRef<HTMLDivElement | null>(null);
   const rsiHost = useRef<HTMLDivElement | null>(null);
@@ -209,6 +217,27 @@ export default function CandleChart({
 
     const goLive = () => chart.timeScale().scrollToRealTime();
     onGoLiveReady?.(goLive);
+    const applyLive = (liveCandle: Candle) => {
+      if (!candleSeriesRef.current || !volumeSeriesRef.current) return;
+      const t = Math.floor(liveCandle.open_time / 1000) as UTCTimestamp;
+      candleSeriesRef.current.update({
+        time: t,
+        open: liveCandle.open,
+        high: liveCandle.high,
+        low: liveCandle.low,
+        close: liveCandle.close,
+      });
+      volumeSeriesRef.current.update({
+        time: t,
+        value: liveCandle.volume,
+        color:
+          liveCandle.close >= liveCandle.open
+            ? "rgba(38,166,154,0.4)"
+            : "rgba(239,83,80,0.4)",
+      });
+      if (followRef.current) chart.timeScale().scrollToRealTime();
+    };
+    onLiveApi?.({ applyLive, scrollToRealtime: goLive });
 
     chart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
       if (!range) return;
@@ -302,6 +331,7 @@ export default function CandleChart({
       childChartsRef.current = [];
       overlaySeriesRef.current = [];
       priceLinesRef.current = [];
+      onLiveApi?.(null);
       candleSeriesRef.current = null;
       volumeSeriesRef.current = null;
       chartRef.current = null;

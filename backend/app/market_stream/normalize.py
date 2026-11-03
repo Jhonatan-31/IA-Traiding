@@ -24,6 +24,49 @@ def stream_name(symbol: str, interval: str) -> str:
     return f"{symbol.lower()}@kline_{interval}"
 
 
+def trade_stream_name(symbol: str) -> str:
+    return f"{symbol.lower()}@trade"
+
+
+def normalize_trade_message(raw: dict[str, Any], *, source: str = "binance_ws") -> dict[str, Any] | None:
+    """
+    Public aggregate trade stream (not bookTicker).
+    Fields: price, qty, trade_id, event_time, trade_time — not bid/ask.
+    """
+    data = raw.get("data") if isinstance(raw.get("data"), dict) else raw
+    if not isinstance(data, dict):
+        return None
+    if data.get("e") not in ("trade", "aggTrade") and "p" not in data:
+        return None
+    # Prefer raw trade; also accept aggTrade (a=agg id)
+    try:
+        symbol = str(data["s"]).upper()
+        price = float(data["p"])
+        qty = float(data["q"])
+        event_ms = int(data["E"])
+        trade_time = int(data.get("T") or event_ms)
+        if data.get("e") == "aggTrade":
+            trade_id = int(data["a"])
+            kind = "aggTrade"
+        else:
+            trade_id = int(data["t"])
+            kind = "trade"
+        return {
+            "type": "trade",
+            "symbol": symbol,
+            "price": price,
+            "qty": qty,
+            "trade_id": trade_id,
+            "event_time_ms": event_ms,
+            "trade_time_ms": trade_time,
+            "is_buyer_maker": bool(data.get("m")),
+            "kind": kind,
+            "source": source,
+        }
+    except (KeyError, TypeError, ValueError):
+        return None
+
+
 def normalize_kline_message(raw: dict[str, Any], *, source: str = "binance_ws") -> dict[str, Any] | None:
     """
     Accept combined or raw kline event.
