@@ -163,6 +163,10 @@ async def process_orders(db_factory) -> dict[str, Any]:
                             mark_order(
                                 c.execute, oid, status="REJECTED", reject_reason=why
                             )
+                            c.execute(
+                                """UPDATE lab_executor_state SET
+                                     orders_rejected=orders_rejected+1, updated_at=NOW() WHERE id=1"""
+                            )
                             summary["rejected"] += 1
                             summary["items"].append({"id": oid, "status": "REJECTED", "reason": why})
                             continue
@@ -183,6 +187,10 @@ async def process_orders(db_factory) -> dict[str, Any]:
                                 oid,
                                 status="REJECTED",
                                 reject_reason=result.get("reason"),
+                            )
+                            c.execute(
+                                """UPDATE lab_executor_state SET
+                                     orders_rejected=orders_rejected+1, updated_at=NOW() WHERE id=1"""
                             )
                             summary["rejected"] += 1
                         else:
@@ -213,6 +221,10 @@ async def process_orders(db_factory) -> dict[str, Any]:
                                 oid,
                                 status="REJECTED",
                                 reject_reason="stale_or_missing_mark",
+                            )
+                            c.execute(
+                                """UPDATE lab_executor_state SET
+                                     orders_rejected=orders_rejected+1, updated_at=NOW() WHERE id=1"""
                             )
                             summary["rejected"] += 1
                             summary["items"].append(
@@ -246,6 +258,10 @@ async def process_orders(db_factory) -> dict[str, Any]:
                                 status="REJECTED",
                                 reject_reason=str(fill.get("reason")),
                             )
+                            c.execute(
+                                """UPDATE lab_executor_state SET
+                                     orders_rejected=orders_rejected+1, updated_at=NOW() WHERE id=1"""
+                            )
                             summary["rejected"] += 1
                             continue
                         uid = str(order["order_uid"])
@@ -272,6 +288,10 @@ async def process_orders(db_factory) -> dict[str, Any]:
                                 status="REJECTED",
                                 reject_reason=result.get("reason"),
                             )
+                            c.execute(
+                                """UPDATE lab_executor_state SET
+                                     orders_rejected=orders_rejected+1, updated_at=NOW() WHERE id=1"""
+                            )
                             summary["rejected"] += 1
                         else:
                             mark_order(
@@ -297,6 +317,10 @@ async def process_orders(db_factory) -> dict[str, Any]:
                     with db_factory() as c:
                         mark_order(
                             c.execute, oid, status="REJECTED", reject_reason="invalid_side"
+                        )
+                        c.execute(
+                            """UPDATE lab_executor_state SET
+                                 orders_rejected=orders_rejected+1, updated_at=NOW() WHERE id=1"""
                         )
                     summary["rejected"] += 1
             except Exception as exc:
@@ -401,7 +425,7 @@ async def run_lab_cycle(db_factory) -> dict[str, Any]:
             )
             return {"ok": True, "paused": True}
 
-    signals = await scan_and_enqueue(db_factory)
+    signals = await scan_and_enqueue(db_factory, cycle_started_at=started)
     exits = await scan_exits(db_factory)
     orders = await process_orders(db_factory)
 
@@ -429,6 +453,14 @@ async def run_lab_cycle(db_factory) -> dict[str, Any]:
             )
         finished = _now()
         duration_ms = int((finished - started).total_seconds() * 1000)
+        import os
+
+        slip_est = sum(
+            float(i.get("slip") or 0)
+            for i in (orders.get("items") or [])
+            if isinstance(i, dict)
+        )
+        # Heartbeat first so monitor sees a fresh pulse for this successful cycle
         c.execute(
             """UPDATE lab_executor_state SET
                  status='OK',
@@ -447,6 +479,7 @@ async def run_lab_cycle(db_factory) -> dict[str, Any]:
                             "buy": signals.get("signals_buy"),
                             "sell": signals.get("signals_sell"),
                             "hold": signals.get("signals_hold"),
+                            "crosses": signals.get("crosses_detected"),
                             "enqueued": signals.get("enqueued"),
                             "duplicates": signals.get("duplicates"),
                         },
@@ -456,6 +489,7 @@ async def run_lab_cycle(db_factory) -> dict[str, Any]:
                             "rejected": orders.get("rejected"),
                         },
                         "valuation_status": valuation.get("valuation_status"),
+                        "last_candle_ms": signals.get("last_candle_ms"),
                         "snapshot": {
                             "cash": snap["cash"],
                             "positions": len(snap["positions"]),
@@ -463,6 +497,19 @@ async def run_lab_cycle(db_factory) -> dict[str, Any]:
                     }
                 ),
             ),
+        )
+        from .monitor import run_monitor
+
+        expected_cycle_s = float(os.environ.get("LAB_EVERY_SECONDS", "300"))
+        monitor = run_monitor(
+            c.execute,
+            expected_cycle_s=expected_cycle_s,
+            binance_errors=int(signals.get("errors") or 0),
+        )
+        c.execute(
+            """UPDATE lab_executor_state SET
+                 meta_json=meta_json || %s::jsonb, updated_at=NOW() WHERE id=1""",
+            (json.dumps({"monitor_active": len(monitor.get("active") or [])}),),
         )
         c.execute(
             """INSERT INTO lab_cycles(
@@ -493,6 +540,14 @@ async def run_lab_cycle(db_factory) -> dict[str, Any]:
                             "rejected": orders.get("rejected"),
                         },
                         "valuation_status": valuation.get("valuation_status"),
+                        "crosses_detected": signals.get("crosses_detected"),
+                        "last_candle_ms": signals.get("last_candle_ms"),
+                        "eval_sample": signals.get("eval_sample") or [],
+                        "slippage_estimate_cycle": slip_est,
+                        "monitor": {
+                            "raised": monitor.get("raised"),
+                            "active_n": len(monitor.get("active") or []),
+                        },
                     }
                 ),
             ),
@@ -504,6 +559,7 @@ async def run_lab_cycle(db_factory) -> dict[str, Any]:
         "exits": exits,
         "orders": orders,
         "valuation": valuation,
+        "monitor": monitor,
         "duration_ms": duration_ms,
         "note": "PAPER_ONLY lab ledger; SMA paper account untouched; Shadow AI not executing.",
     }

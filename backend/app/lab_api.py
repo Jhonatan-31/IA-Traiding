@@ -70,6 +70,7 @@ async def lab_status():
         buys = sum(1 for t in trades if t["side"] == "BUY")
         sells = sum(1 for t in trades if t["side"] == "SELL")
         fees = sum(float(t["fee"] or 0) for t in trades)
+        slip_total = sum(float(t.get("slip") or 0) for t in trades)
         realized = sum(
             float(t["realized_pnl"]) for t in trades if t.get("realized_pnl") is not None
         )
@@ -80,6 +81,56 @@ async def lab_status():
             "SELECT cash FROM virt_accounts WHERE id='research_sim'"
         ).fetchone()
         pos_syms = [p["symbol"] for p in snap["positions"]]
+        cycles_1h = c.execute(
+            """SELECT COUNT(*) AS n FROM lab_cycles
+               WHERE started_at > NOW() - INTERVAL '1 hour'"""
+        ).fetchone()["n"]
+        eval_stats = c.execute(
+            """SELECT
+                 COUNT(*) AS evaluated,
+                 COUNT(*) FILTER (WHERE decision='BUY') AS buy,
+                 COUNT(*) FILTER (WHERE decision='SELL') AS sell,
+                 COUNT(*) FILTER (WHERE decision='HOLD') AS hold,
+                 COUNT(*) FILTER (WHERE cross_state IN ('golden','death')) AS crosses
+               FROM lab_signal_evals
+               WHERE at > NOW() - INTERVAL '24 hours'"""
+        ).fetchone()
+        recent_evals = list(
+            c.execute(
+                """SELECT at, symbol, candle_ms, sma10, sma50, cross_state, decision,
+                          reason, data_status, risk_status
+                   FROM lab_signal_evals ORDER BY id DESC LIMIT 40"""
+            )
+        )
+        equity_hist = list(
+            c.execute(
+                """SELECT day, start_equity, end_equity FROM lab_equity_daily
+                   WHERE account_id=%s ORDER BY day DESC LIMIT 30""",
+                (ACCOUNT_ID,),
+            )
+        )
+        monitor_alerts = list(
+            c.execute(
+                """SELECT id, at, code, severity, message, active, fingerprint
+                   FROM lab_alerts WHERE active=TRUE ORDER BY id DESC LIMIT 30"""
+            )
+        )
+        organic_signals = list(
+            c.execute(
+                """SELECT id, created_at, symbol, side, candle_ms, ref_price, meta_json
+                   FROM lab_signals ORDER BY id DESC LIMIT 30"""
+            )
+        )
+        accepted = c.execute(
+            """SELECT COUNT(*) AS n FROM lab_orders
+               WHERE account_id=%s AND status='FILLED'""",
+            (ACCOUNT_ID,),
+        ).fetchone()["n"]
+        rejected_n = c.execute(
+            """SELECT COUNT(*) AS n FROM lab_orders
+               WHERE account_id=%s AND status='REJECTED'""",
+            (ACCOUNT_ID,),
+        ).fetchone()["n"]
 
     marks = await fetch_marks(pos_syms)
     with db() as c:
@@ -111,8 +162,34 @@ async def lab_status():
                 "message": str(state.get("last_error"))[:300],
             }
         )
+    seen_codes = {a["code"] for a in alerts}
+    for ma in monitor_alerts:
+        if ma["code"] in seen_codes:
+            continue
+        alerts.append(
+            {
+                "severity": ma["severity"],
+                "code": ma["code"],
+                "message": ma["message"],
+            }
+        )
+        seen_codes.add(ma["code"])
 
     last_cycle = cycles[0] if cycles else None
+    meta = (state or {}).get("meta_json") or {}
+    if isinstance(meta, str):
+        import json as _json
+
+        meta = _json.loads(meta)
+    last_candle_ms = meta.get("last_candle_ms")
+    no_opportunity = bool(
+        last_cycle
+        and int(last_cycle.get("signals_buy") or 0) == 0
+        and int(last_cycle.get("signals_sell") or 0) == 0
+        and int(last_cycle.get("symbols_scanned") or 0) > 0
+        and last_cycle.get("ok")
+    )
+
     return serial(
         {
             "mode": "PAPER_ONLY",
@@ -130,6 +207,7 @@ async def lab_status():
                 "filled_orders": len(fills),
             },
             "fees_simulated": fees,
+            "slippage_estimated": slip_total,
             "realized_pnl": realized,
             "orders_pending": pending,
             "orders_rejected": rejected,
@@ -140,6 +218,32 @@ async def lab_status():
             "last_cycle": last_cycle,
             "breaker_events": breaker_events,
             "alerts": alerts,
+            "observability": {
+                "cycles_last_hour": int(cycles_1h),
+                "signals_evaluated_24h": int(eval_stats["evaluated"] or 0) if eval_stats else 0,
+                "crosses_detected_24h": int(eval_stats["crosses"] or 0) if eval_stats else 0,
+                "decisions_24h": {
+                    "buy": int(eval_stats["buy"] or 0) if eval_stats else 0,
+                    "sell": int(eval_stats["sell"] or 0) if eval_stats else 0,
+                    "hold": int(eval_stats["hold"] or 0) if eval_stats else 0,
+                },
+                "orders_accepted": int(accepted),
+                "orders_rejected": int(rejected_n),
+                "fees_accumulated": fees,
+                "slippage_estimated": slip_total,
+                "circuit_breaker_active": bool(state and state.get("breaker_active")),
+                "last_candle_ms": last_candle_ms,
+                "operating_without_opportunity": no_opportunity,
+                "note_no_opportunity": (
+                    "Sistema operativo: sin cruces SMA en el último ciclo (HOLD)."
+                    if no_opportunity
+                    else None
+                ),
+            },
+            "equity_history": equity_hist,
+            "signal_evals_recent": recent_evals,
+            "organic_signals": organic_signals,
+            "monitor_alerts": monitor_alerts,
             "integrity": {
                 "sma_paper": {
                     "cash": float(sma_cash),

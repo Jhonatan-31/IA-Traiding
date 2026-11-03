@@ -108,6 +108,11 @@ export default function AutoTradePage() {
   const cycles = (status?.cycles as Record<string, unknown>[]) || [];
   const alerts = (status?.alerts as Record<string, unknown>[]) || [];
   const lastCycle = (status?.last_cycle as Record<string, unknown>) || {};
+  const obs = (status?.observability as Record<string, unknown>) || {};
+  const decisions = (obs.decisions_24h as Record<string, number>) || {};
+  const equityHist = (status?.equity_history as Record<string, unknown>[]) || [];
+  const evals = (status?.signal_evals_recent as Record<string, unknown>[]) || [];
+  const organic = (status?.organic_signals as Record<string, unknown>[]) || [];
 
   return (
     <div>
@@ -219,6 +224,33 @@ export default function AutoTradePage() {
         </div>
       </div>
 
+      {obs.operating_without_opportunity ? (
+        <div className="card" style={{ marginBottom: 14, borderColor: "#2dd4bf" }}>
+          Sistema operativo sin oportunidades: sin cruces SMA en el último ciclo (HOLD). No se
+          fuerzan operaciones.
+        </div>
+      ) : null}
+
+      <div className="card" style={{ marginBottom: 14 }}>
+        <h3>Observabilidad</h3>
+        <p>
+          Ciclos/hora: {String(obs.cycles_last_hour ?? 0)} · Evaluaciones 24h:{" "}
+          {String(obs.signals_evaluated_24h ?? 0)} · Cruces:{" "}
+          {String(obs.crosses_detected_24h ?? 0)} · BUY/SELL/HOLD:{" "}
+          {String(decisions.buy ?? 0)}/{String(decisions.sell ?? 0)}/{String(decisions.hold ?? 0)}
+        </p>
+        <p>
+          Órdenes aceptadas: {String(obs.orders_accepted ?? 0)} · rechazadas:{" "}
+          {String(obs.orders_rejected ?? 0)} · Fees:{" "}
+          {fmtNum(obs.fees_accumulated as number | null, 4)} · Slippage est.:{" "}
+          {fmtNum(obs.slippage_estimated as number | null, 4)} · Breaker:{" "}
+          {obs.circuit_breaker_active ? "ACTIVO" : "inactivo"}
+        </p>
+        <p className="muted" style={{ fontSize: 12 }}>
+          Última vela procesada (open_ms): {String(obs.last_candle_ms ?? "—")}
+        </p>
+      </div>
+
       <div className="card" style={{ marginBottom: 14 }}>
         <h3>Valoración mark-to-market</h3>
         <p>
@@ -257,6 +289,128 @@ export default function AutoTradePage() {
             Último error ejecutor: {String(exec.last_error)}
           </p>
         ) : null}
+      </div>
+
+      <div className="card" style={{ marginBottom: 14 }}>
+        <h3>Historial capital virtual</h3>
+        <div className="table-wrap">
+          <table className="data">
+            <thead>
+              <tr>
+                <th>Día</th>
+                <th>Inicio</th>
+                <th>Fin</th>
+              </tr>
+            </thead>
+            <tbody>
+              {equityHist.length === 0 ? (
+                <tr>
+                  <td colSpan={3} className="muted">
+                    Sin series diarias aún
+                  </td>
+                </tr>
+              ) : (
+                equityHist.map((e) => (
+                  <tr key={String(e.day)}>
+                    <td>{String(e.day)}</td>
+                    <td>{fmtNum(e.start_equity as number, 2)}</td>
+                    <td>
+                      {e.end_equity == null ? "—" : fmtNum(e.end_equity as number, 2)}
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className="card" style={{ marginBottom: 14 }}>
+        <h3>Auditoría de señales (evaluaciones)</h3>
+        <div className="table-wrap">
+          <table className="data">
+            <thead>
+              <tr>
+                <th>UTC</th>
+                <th>Símbolo</th>
+                <th>Vela</th>
+                <th>SMA10</th>
+                <th>SMA50</th>
+                <th>Cruce</th>
+                <th>Decisión</th>
+                <th>Motivo</th>
+                <th>Datos</th>
+                <th>Riesgo</th>
+              </tr>
+            </thead>
+            <tbody>
+              {evals.length === 0 ? (
+                <tr>
+                  <td colSpan={10} className="muted">
+                    Sin evaluaciones registradas aún
+                  </td>
+                </tr>
+              ) : (
+                evals.slice(0, 25).map((e, i) => (
+                  <tr key={`${String(e.symbol)}-${String(e.at)}-${i}`}>
+                    <td>{fmtTime(e.at as string)}</td>
+                    <td>{String(e.symbol)}</td>
+                    <td>{String(e.candle_ms ?? "—")}</td>
+                    <td>
+                      {e.sma10 == null ? "—" : fmtNum(e.sma10 as number, 4)}
+                    </td>
+                    <td>
+                      {e.sma50 == null ? "—" : fmtNum(e.sma50 as number, 4)}
+                    </td>
+                    <td>{String(e.cross_state ?? "—")}</td>
+                    <td>{String(e.decision)}</td>
+                    <td>{String(e.reason ?? "—")}</td>
+                    <td>{String(e.data_status ?? "—")}</td>
+                    <td>{String(e.risk_status ?? "—")}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className="card" style={{ marginBottom: 14 }}>
+        <h3>Señales orgánicas persistidas</h3>
+        <div className="table-wrap">
+          <table className="data">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>UTC</th>
+                <th>Side</th>
+                <th>Símbolo</th>
+                <th>Vela</th>
+                <th>Ref</th>
+              </tr>
+            </thead>
+            <tbody>
+              {organic.length === 0 ? (
+                <tr>
+                  <td colSpan={6} className="muted">
+                    Sin cruces persistidos
+                  </td>
+                </tr>
+              ) : (
+                organic.map((s) => (
+                  <tr key={String(s.id)}>
+                    <td>{String(s.id)}</td>
+                    <td>{fmtTime(s.created_at as string)}</td>
+                    <td>{String(s.side)}</td>
+                    <td>{String(s.symbol)}</td>
+                    <td>{String(s.candle_ms)}</td>
+                    <td>{fmtNum(s.ref_price as number, 4)}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       <div className="card" style={{ marginBottom: 14 }}>

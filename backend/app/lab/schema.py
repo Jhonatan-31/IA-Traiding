@@ -175,3 +175,46 @@ def ensure_lab_schema(execute: Callable) -> None:
             evidence_json JSONB NOT NULL DEFAULT '{}'::jsonb
         )"""
     )
+    # Per-cycle signal audit (BUY/SELL/HOLD) — closed bars only; no look-ahead
+    execute(
+        """CREATE TABLE IF NOT EXISTS lab_signal_evals(
+            id BIGSERIAL PRIMARY KEY,
+            at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            cycle_started_at TIMESTAMPTZ NOT NULL,
+            symbol TEXT NOT NULL,
+            candle_ms BIGINT,
+            sma10 NUMERIC,
+            sma50 NUMERIC,
+            sma10_prev NUMERIC,
+            sma50_prev NUMERIC,
+            cross_state TEXT NOT NULL DEFAULT 'none',
+            decision TEXT NOT NULL,
+            reason TEXT,
+            data_status TEXT NOT NULL DEFAULT 'ok',
+            risk_status TEXT NOT NULL DEFAULT 'ok',
+            closed_only BOOLEAN NOT NULL DEFAULT TRUE,
+            meta_json JSONB NOT NULL DEFAULT '{}'::jsonb
+        )"""
+    )
+    execute(
+        """CREATE INDEX IF NOT EXISTS lab_signal_evals_cycle_idx
+           ON lab_signal_evals(cycle_started_at DESC)"""
+    )
+    execute(
+        """CREATE INDEX IF NOT EXISTS lab_signal_evals_at_idx
+           ON lab_signal_evals(at DESC)"""
+    )
+    # Deduplicated internal alerts — never auto-restart critical ops
+    execute(
+        """CREATE TABLE IF NOT EXISTS lab_alerts(
+            id BIGSERIAL PRIMARY KEY,
+            at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+            code TEXT NOT NULL,
+            severity TEXT NOT NULL,
+            message TEXT NOT NULL,
+            active BOOLEAN NOT NULL DEFAULT TRUE,
+            fingerprint TEXT NOT NULL UNIQUE,
+            evidence_json JSONB NOT NULL DEFAULT '{}'::jsonb,
+            resolved_at TIMESTAMPTZ
+        )"""
+    )
