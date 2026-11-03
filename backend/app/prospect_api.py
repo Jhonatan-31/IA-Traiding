@@ -359,6 +359,19 @@ def prospect_horizons():
     )
 
 
+@router.get("/report")
+def prospect_report_api(experiment_type: str = "SHADOW_LIVE"):
+    """Detailed prospective results — SHADOW_LIVE by default; never mixes kinds."""
+    from .main import db, serial
+    from .prospect.report import prospective_report
+
+    if experiment_type not in ("SHADOW_LIVE", "SHADOW_REPLAY", "BACKTEST", "PAPER_TRADE"):
+        raise HTTPException(400, "invalid experiment_type")
+    with db() as c:
+        ensure_prospect_schema(c.execute)
+        return serial(prospective_report(c.execute, experiment_type=experiment_type))
+
+
 @router.get("/audit")
 def prospect_audit():
     """Operational audit bundle for Etapa J — evidence only."""

@@ -384,6 +384,10 @@ export const api = {
     return res.json() as Promise<Record<string, unknown>>;
   },
   prospectAudit: () => getJson<Record<string, unknown>>("/api/prospect/audit"),
+  prospectReport: (experiment_type = "SHADOW_LIVE") =>
+    getJson<Record<string, unknown>>(
+      `/api/prospect/report?experiment_type=${encodeURIComponent(experiment_type)}`
+    ),
   prospectHorizons: () => getJson<Record<string, unknown>>("/api/prospect/horizons"),
   prospectReconcile: async () => {
     const res = await fetch("/api/prospect/reconcile", { method: "POST" });

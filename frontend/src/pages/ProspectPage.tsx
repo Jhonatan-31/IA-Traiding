@@ -1,19 +1,29 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import {
+  CartesianGrid,
+  Line,
+  LineChart,
+  ResponsiveContainer,
+  Tooltip,
+  XAxis,
+  YAxis,
+} from "recharts";
 import { api, fmtNum, fmtTime } from "../api";
 
 function pillFor(status?: string) {
   const s = (status || "UNKNOWN").toUpperCase();
-  if (s === "OK") return "ok";
-  if (s === "WARNING" || s === "WARN" || s === "LOCKED" || s === "RUNNING") return "warn";
-  if (s === "ERROR" || s === "CRITICAL") return "err";
+  if (s === "OK" || s === "RESOLVED") return "ok";
+  if (s === "WARNING" || s === "WARN" || s === "LOCKED" || s === "RUNNING" || s === "PENDING")
+    return "warn";
+  if (s === "ERROR" || s === "CRITICAL" || s === "INVALID") return "err";
   return "info";
 }
 
 export default function ProspectPage() {
   const [status, setStatus] = useState<Record<string, unknown> | null>(null);
   const [decisions, setDecisions] = useState<Record<string, unknown>[]>([]);
-  const [bench, setBench] = useState<Record<string, unknown> | null>(null);
   const [audit, setAudit] = useState<Record<string, unknown> | null>(null);
+  const [report, setReport] = useState<Record<string, unknown> | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
@@ -21,11 +31,12 @@ export default function ProspectPage() {
   const [statusFilter, setStatusFilter] = useState("");
   const [symbolFilter, setSymbolFilter] = useState("");
   const [strategyFilter, setStrategyFilter] = useState("");
+  const [resultActionFilter, setResultActionFilter] = useState("");
 
   const load = useCallback(async () => {
     setError(null);
     try {
-      const [s, d, b, a] = await Promise.all([
+      const [s, d, a, r] = await Promise.all([
         api.prospectStatus(),
         api.prospectDecisions(80, {
           experiment_type: typeFilter || undefined,
@@ -33,13 +44,13 @@ export default function ProspectPage() {
           symbol: symbolFilter || undefined,
           strategy: strategyFilter || undefined,
         }),
-        api.prospectBenchmarks(),
         api.prospectAudit(),
+        api.prospectReport(typeFilter || "SHADOW_LIVE"),
       ]);
       setStatus(s);
       setDecisions(d);
-      setBench(b);
       setAudit(a);
+      setReport(r);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Error");
     }
@@ -130,6 +141,25 @@ export default function ProspectPage() {
   const paperRecon = (recon.paper_sma as Record<string, unknown>) || {};
   const virtId = ((recon.virtual_ledger as Record<string, unknown>)?.identity ||
     {}) as Record<string, unknown>;
+  const reportCounts = (report?.counts as Record<string, number>) || {};
+  const reportClass = (report?.classification as Record<string, unknown>) || {};
+  const reportProb = (report?.probability_scores as Record<string, unknown>) || {};
+  const reportHypo = (report?.hypothetical_buy as Record<string, unknown>) || {};
+  const reportDecisions = (report?.decisions as Record<string, unknown>[]) || [];
+  const curve = (report?.equity_curve_hypo_buy as Record<string, unknown>[]) || [];
+  const filteredResults = useMemo(() => {
+    return reportDecisions.filter((d) => {
+      if (resultActionFilter && String(d.action) !== resultActionFilter) return false;
+      if (statusFilter && String(d.resolution_status) !== statusFilter) return false;
+      if (symbolFilter && !String(d.symbol).includes(symbolFilter.toUpperCase())) return false;
+      return true;
+    });
+  }, [reportDecisions, resultActionFilter, statusFilter, symbolFilter]);
+  const chartData = curve.map((p, i) => ({
+    i: i + 1,
+    cum: Number(p.cum_hypo_buy_net),
+    label: String(p.symbol),
+  }));
 
   return (
     <div>
@@ -336,24 +366,42 @@ export default function ProspectPage() {
       </div>
 
       <div className="card" style={{ marginBottom: 14 }}>
-        <h3>Métricas SHADOW_LIVE (no mezclar con REPLAY)</h3>
+        <h3>Informe prospectivo SHADOW_LIVE</h3>
         <p>
-          BUY resueltos: {String(hypo.n_buy ?? 0)} · HOLD: {String(hypo.n_hold ?? 0)} (HOLD ≠
-          trade rentable) · Media net BUY: {fmtNum(hypo.mean_buy_net as number | null, 5)}
+          Total: {String(reportCounts.total ?? counts.total ?? "UNKNOWN")} · Pendientes:{" "}
+          {String(reportCounts.pending ?? counts.PENDING ?? "UNKNOWN")} · Resueltas:{" "}
+          {String(reportCounts.resolved ?? counts.RESOLVED ?? "UNKNOWN")} · Inválidas:{" "}
+          {String(reportCounts.invalid ?? counts.INVALID ?? "UNKNOWN")}
         </p>
         <p>
-          IC bootstrap media: [{fmtNum(buyCi.low as number | null, 5)},{" "}
-          {fmtNum(buyCi.high as number | null, 5)}] · vs cash:{" "}
-          {fmtNum(portfolio.vs_cash as number | null, 5)}
+          BUY resueltas: {String(reportCounts.buy_resolved ?? hypo.n_buy ?? 0)} · HOLD
+          resueltas (abstención): {String(reportCounts.hold_resolved ?? hypo.n_hold ?? 0)} ·
+          HOLD ≠ trade ganador
+        </p>
+        <p>
+          Accuracy BUY: {fmtNum(reportClass.accuracy_buy_directional as number | null, 4)} ·
+          Brier:{" "}
+          {reportProb.applicable
+            ? fmtNum(reportProb.brier as number | null, 4)
+            : "N/A"}{" "}
+          · LogLoss:{" "}
+          {reportProb.applicable
+            ? fmtNum(reportProb.logloss as number | null, 4)
+            : "N/A"}
+        </p>
+        <p>
+          Media net hipotético BUY: {fmtNum(reportHypo.mean_net as number | null, 5)} · vs
+          cash: {fmtNum(reportHypo.vs_cash as number | null, 5)} · IC bootstrap: [
+          {fmtNum(buyCi.low as number | null, 5)}, {fmtNum(buyCi.high as number | null, 5)}]
         </p>
         <p className="muted" style={{ fontSize: 12 }}>
           {String(
-            portfolio.evidence_label ||
+            report?.evidence_label ||
+              portfolio.evidence_label ||
               portfolio.warning ||
-              audit?.evidence_label ||
-              bench?.note ||
               "Evidencia insuficiente"
-          )}
+          )}{" "}
+          · {String(report?.portfolio_pnl_note || "")}
         </p>
         {bySymbol.length > 0 && (
           <div className="table-wrap" style={{ marginTop: 8 }}>
@@ -379,6 +427,121 @@ export default function ProspectPage() {
             </table>
           </div>
         )}
+      </div>
+
+      <div className="card" style={{ marginBottom: 14 }}>
+        <h3>Evolución hipotética acumulada (solo BUY resueltas)</h3>
+        <p className="muted" style={{ fontSize: 12 }}>
+          No es PnL de cartera financiada. HOLD excluido. Sin puntos = evidencia insuficiente.
+        </p>
+        {chartData.length === 0 ? (
+          <p>Evidencia insuficiente — sin BUY resueltas aún.</p>
+        ) : (
+          <div style={{ width: "100%", height: 220 }}>
+            <ResponsiveContainer>
+              <LineChart data={chartData}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#334155" />
+                <XAxis dataKey="i" stroke="#94a3b8" />
+                <YAxis stroke="#94a3b8" />
+                <Tooltip />
+                <Line
+                  type="monotone"
+                  dataKey="cum"
+                  name="cum_hypo_buy_net"
+                  stroke="#2dd4bf"
+                  dot={false}
+                  strokeWidth={2}
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
+        )}
+      </div>
+
+      <div className="card" style={{ marginBottom: 14 }}>
+        <h3>Tabla de resultados prospectivos</h3>
+        <div className="actions" style={{ gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
+          <select
+            value={resultActionFilter}
+            onChange={(e) => setResultActionFilter(e.target.value)}
+          >
+            <option value="">BUY y HOLD</option>
+            <option value="BUY">BUY</option>
+            <option value="HOLD">HOLD</option>
+          </select>
+        </div>
+        <div className="table-wrap">
+          <table className="data">
+            <thead>
+              <tr>
+                <th>Señal</th>
+                <th>Símbolo</th>
+                <th>Acción</th>
+                <th>Prob.</th>
+                <th>Px entrada</th>
+                <th>Px salida</th>
+                <th>Ret. activo</th>
+                <th>Net hipot. BUY</th>
+                <th>Clasif.</th>
+                <th>Calidad</th>
+                <th>Estado</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredResults.length === 0 ? (
+                <tr>
+                  <td colSpan={11} className="muted">
+                    Sin filas (horizontes aún pendientes o filtros vacíos).
+                  </td>
+                </tr>
+              ) : (
+                filteredResults.map((d) => (
+                  <tr key={String(d.id)}>
+                    <td>{fmtTime(d.signal_ts as string)}</td>
+                    <td>{String(d.symbol)}</td>
+                    <td>{String(d.action)}</td>
+                    <td>
+                      {d.probability == null
+                        ? "N/A"
+                        : fmtNum(d.probability as number, 3)}
+                    </td>
+                    <td>{fmtNum(d.entry_price_observed as number | null, 4)}</td>
+                    <td>
+                      {d.exit_price_observed == null
+                        ? "—"
+                        : fmtNum(d.exit_price_observed as number, 4)}
+                    </td>
+                    <td>
+                      {d.asset_return == null
+                        ? "—"
+                        : fmtNum(d.asset_return as number, 5)}
+                    </td>
+                    <td>
+                      {d.action === "HOLD"
+                        ? "abstención"
+                        : d.hypothetical_net_if_buy == null
+                          ? "—"
+                          : fmtNum(d.hypothetical_net_if_buy as number, 5)}
+                    </td>
+                    <td>
+                      {d.classification_hit == null
+                        ? "—"
+                        : d.classification_hit
+                          ? "hit"
+                          : "miss"}
+                    </td>
+                    <td>{String(d.data_quality ?? "—")}</td>
+                    <td>
+                      <span className={`pill ${pillFor(String(d.resolution_status))}`}>
+                        {String(d.resolution_status)}
+                      </span>
+                    </td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       <div className="card" style={{ marginBottom: 14 }}>
