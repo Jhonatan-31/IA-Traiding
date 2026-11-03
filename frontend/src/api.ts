@@ -349,6 +349,39 @@ export const api = {
     if (!res.ok) throw new Error(`shadow/run → HTTP ${res.status}`);
     return res.json() as Promise<{ generated: number; items: unknown[] }>;
   },
+  prospectStatus: () => getJson<Record<string, unknown>>("/api/prospect/status"),
+  prospectDecisions: (
+    limit = 50,
+    opts?: {
+      experiment_type?: string;
+      strategy?: string;
+      symbol?: string;
+      status?: string;
+    }
+  ) => {
+    const q = new URLSearchParams({ limit: String(limit) });
+    if (opts?.experiment_type) q.set("experiment_type", opts.experiment_type);
+    if (opts?.strategy) q.set("strategy", opts.strategy);
+    if (opts?.symbol) q.set("symbol", opts.symbol);
+    if (opts?.status) q.set("status", opts.status);
+    return getJson<Record<string, unknown>[]>(`/api/prospect/decisions?${q}`);
+  },
+  prospectBenchmarks: () =>
+    getJson<Record<string, unknown>>("/api/prospect/benchmarks"),
+  prospectShadowLiveRun: async () => {
+    const res = await fetch("/api/prospect/shadow-live/run", { method: "POST" });
+    if (!res.ok) throw new Error(`prospect shadow-live → HTTP ${res.status}`);
+    return res.json() as Promise<{ generated: number; items: unknown[] }>;
+  },
+  prospectResolve: async () => {
+    const res = await fetch("/api/prospect/resolve", { method: "POST" });
+    if (!res.ok) throw new Error(`prospect resolve → HTTP ${res.status}`);
+    return res.json() as Promise<{
+      resolved: number;
+      invalid: number;
+      still_pending: number;
+    }>;
+  },
 };
 
 export function fmtNum(n: number | null | undefined, digits = 4): string {

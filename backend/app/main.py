@@ -19,6 +19,8 @@ from . import ohlcv as ohlcv_mod
 from . import risk as risk_mod
 from .ml.schema import ensure_ml_schema
 from .ml_api import router as ml_router
+from .prospect.schema import ensure_prospect_schema
+from .prospect_api import router as prospect_router
 
 DATABASE_URL = os.environ["DATABASE_URL"]
 BASE = "https://data-api.binance.vision/api/v3"
@@ -123,6 +125,7 @@ def setup():
             c.execute(stmt)
         alerts_mod.ensure_alert_schema(c.execute)
         ensure_ml_schema(c.execute)
+        ensure_prospect_schema(c.execute)
 
 
 def log_event(level: str, message: str) -> None:
@@ -479,6 +482,20 @@ async def work():
                         print("SHADOW_RESOLVE", summary["resolved"], flush=True)
                 except Exception as rex:
                     print("SHADOW_RESOLVE_ERR", type(rex).__name__, rex, flush=True)
+                # Etapa H: prospective resolve + occasional SHADOW_LIVE log (no SMA capital)
+                try:
+                    from .prospect.resolve import resolve_pending as prospect_resolve
+
+                    ps = await prospect_resolve(db, limit=50)
+                    if ps.get("resolved") or ps.get("invalid"):
+                        print(
+                            "PROSPECT_RESOLVE",
+                            ps.get("resolved"),
+                            ps.get("invalid"),
+                            flush=True,
+                        )
+                except Exception as pex:
+                    print("PROSPECT_RESOLVE_ERR", type(pex).__name__, pex, flush=True)
             except Exception as exc:
                 log_event("ERROR", f"COLLECTOR_ERROR {type(exc).__name__}: {exc}")
                 print("COLLECTOR_ERROR", type(exc).__name__, str(exc), flush=True)
@@ -500,6 +517,7 @@ async def lifespan(app):
 
 app = FastAPI(title="AI Trading Bot - PAPER ONLY", lifespan=lifespan)
 app.include_router(ml_router)
+app.include_router(prospect_router)
 
 
 def serial(rows):

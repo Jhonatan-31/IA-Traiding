@@ -362,6 +362,8 @@ def ml_circuit_breaker_evaluate():
             if getattr(at, "tzinfo", None) is None:
                 at = at.replace(tzinfo=timezone.utc)
             data_age = (datetime.now(timezone.utc) - at).total_seconds()
+        # Paper SMA accounting sanity (cash + invested should be ~ initial when no PnL realized)
+        accounting_error = cash < 0 or invested < 0
         block, reason, evidence = evaluate_circuit_breaker(
             equity=equity,
             initial_capital=float(START),
@@ -373,6 +375,8 @@ def ml_circuit_breaker_evaluate():
             invested_cost=invested,
             cash=cash,
             critical_down=False,
+            accounting_error=accounting_error,
+            binance_status_unknown=False,
         )
         persist_breaker_state(
             c.execute, active=block, reason=reason, evidence=evidence

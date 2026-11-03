@@ -29,16 +29,29 @@ def evaluate_circuit_breaker(
     cash: float,
     critical_down: bool,
     limits: dict[str, Any] | None = None,
+    accounting_error: bool = False,
+    binance_status_unknown: bool = False,
+    db_unreachable: bool = False,
 ) -> tuple[bool, str | None, dict[str, Any]]:
     """
     Returns (should_block_new_entries, reason, evidence).
     Does not recommend closing existing positions.
+    AI / Shadow paths must honor this gate for new entries.
     """
     lim = {**DEFAULT_LIMITS, **(limits or {})}
     evidence: dict[str, Any] = {"checked_at": datetime.now(timezone.utc).isoformat()}
 
+    if db_unreachable:
+        return True, "postgres_unreachable", {**evidence, "db_unreachable": True}
+
     if critical_down:
         return True, "critical_service_down", {**evidence, "critical_down": True}
+
+    if accounting_error:
+        return True, "accounting_error", {**evidence, "accounting_error": True}
+
+    if binance_status_unknown:
+        return True, "binance_status_unknown", evidence
 
     if data_age_s is not None and data_age_s > float(lim["max_data_age_s"]):
         return True, "stale_market_data", {**evidence, "data_age_s": data_age_s}

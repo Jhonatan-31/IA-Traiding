@@ -1,0 +1,182 @@
+"""API for prospective research — separated from SMA paper portfolio."""
+from __future__ import annotations
+
+from fastapi import APIRouter, HTTPException, Query
+
+from .prospect.schema import ensure_prospect_schema
+
+router = APIRouter(prefix="/api/prospect", tags=["prospect"])
+
+
+@router.get("/status")
+def prospect_status():
+    from .main import db, serial
+    from .prospect.decisions import decision_counts
+    from .prospect.ledger import accounting_identity_ok, ledger_snapshot
+
+    with db() as c:
+        ensure_prospect_schema(c.execute)
+        counts = decision_counts(c.execute)
+        by_type = {}
+        for t in ("BACKTEST", "SHADOW_REPLAY", "SHADOW_LIVE", "PAPER_TRADE"):
+            by_type[t] = decision_counts(c.execute, t)
+        exps = list(
+            c.execute(
+                """SELECT id, created_at, experiment_type, name, strategy, status
+                   FROM prospect_experiments ORDER BY id DESC LIMIT 20"""
+            )
+        )
+        breaker = c.execute(
+            "SELECT * FROM circuit_breaker_state WHERE id=1"
+        ).fetchone()
+        virt = ledger_snapshot(c.execute)
+        identity = accounting_identity_ok(c.execute)
+    return serial(
+        {
+            "counts": counts,
+            "counts_by_type": by_type,
+            "experiments": exps,
+            "circuit_breaker": breaker,
+            "virtual_ledger": virt,
+            "accounting_identity": identity,
+            "paper_sma_untouched": True,
+            "paper_ai_authorized": False,
+            "real_trading": False,
+        }
+    )
+
+
+@router.get("/decisions")
+def prospect_decisions(
+    limit: int = 50,
+    experiment_type: str | None = None,
+    strategy: str | None = None,
+    symbol: str | None = None,
+    status: str | None = None,
+):
+    from .main import db, serial
+
+    limit = max(1, min(200, limit))
+    clauses = ["1=1"]
+    params: list = []
+    if experiment_type:
+        clauses.append("e.experiment_type=%s")
+        params.append(experiment_type)
+    if strategy:
+        clauses.append("d.strategy=%s")
+        params.append(strategy)
+    if symbol:
+        clauses.append("d.symbol=%s")
+        params.append(symbol.upper())
+    if status:
+        clauses.append("d.resolution_status=%s")
+        params.append(status)
+    params.append(limit)
+    sql = f"""
+        SELECT d.*, e.experiment_type, e.name AS experiment_name,
+               o.observed_net_return, o.observed_label, o.data_quality AS outcome_quality
+        FROM prospect_decisions d
+        JOIN prospect_experiments e ON e.id=d.experiment_id
+        LEFT JOIN prospect_outcomes o ON o.decision_id=d.id
+        WHERE {' AND '.join(clauses)}
+        ORDER BY d.id DESC
+        LIMIT %s
+    """
+    with db() as c:
+        ensure_prospect_schema(c.execute)
+        rows = list(c.execute(sql, tuple(params)))
+    return serial(rows)
+
+
+@router.get("/protocols")
+def prospect_protocols():
+    from .main import db, serial
+    from .prospect.protocols import list_protocols
+
+    with db() as c:
+        ensure_prospect_schema(c.execute)
+        rows = list_protocols(c.execute)
+    return serial(rows)
+
+
+@router.post("/shadow-live/run")
+async def prospect_shadow_live_run(limit_symbols: int = 5):
+    from .main import db, serial
+    from .prospect.engine import run_shadow_live_cycle
+
+    with db() as c:
+        ensure_prospect_schema(c.execute)
+        breaker = c.execute(
+            "SELECT active, reason FROM circuit_breaker_state WHERE id=1"
+        ).fetchone()
+    result = await run_shadow_live_cycle(
+        db,
+        symbols=None,
+        breaker_active=bool(breaker and breaker.get("active")),
+        breaker_reason=(breaker or {}).get("reason"),
+    )
+    # optionally trim symbols
+    if limit_symbols < 5:
+        result["items"] = result.get("items", [])[:limit_symbols]
+    return serial(result)
+
+
+@router.post("/resolve")
+async def prospect_resolve(limit: int = 100):
+    from .main import db, serial
+    from .prospect.resolve import resolve_pending
+
+    return serial(await resolve_pending(db, limit=limit))
+
+
+@router.get("/ledger")
+def prospect_ledger():
+    from .main import db, serial
+    from .prospect.ledger import accounting_identity_ok, ledger_snapshot
+
+    with db() as c:
+        ensure_prospect_schema(c.execute)
+        return serial(
+            {
+                "virtual": ledger_snapshot(c.execute),
+                "identity": accounting_identity_ok(c.execute),
+                "warning": "Do not confuse with /api/overview SMA paper portfolio.",
+            }
+        )
+
+
+@router.get("/benchmarks")
+def prospect_benchmarks():
+    """Prospective resolved nets vs cash benchmark (SHADOW_LIVE only)."""
+    from .main import db, serial
+
+    with db() as c:
+        ensure_prospect_schema(c.execute)
+        rows = list(
+            c.execute(
+                """SELECT d.action, o.observed_net_return, o.status
+                   FROM prospect_decisions d
+                   JOIN prospect_experiments e ON e.id=d.experiment_id
+                   JOIN prospect_outcomes o ON o.decision_id=d.id
+                   WHERE e.experiment_type='SHADOW_LIVE' AND o.status='RESOLVED'"""
+            )
+        )
+    buys = [
+        float(r["observed_net_return"])
+        for r in rows
+        if r["action"] == "BUY" and r["observed_net_return"] is not None
+    ]
+    holds = [r for r in rows if r["action"] == "HOLD"]
+    return serial(
+        {
+            "experiment_type": "SHADOW_LIVE",
+            "resolved_buy_n": len(buys),
+            "mean_buy_net": sum(buys) / len(buys) if buys else None,
+            "hold_n": len(holds),
+            "cash_benchmark_net": 0.0,
+            "note": (
+                "Prospective only. Not mixed with BACKTEST or SHADOW_REPLAY. "
+                "Insufficient n ⇒ no edge claim."
+            ),
+        }
+    )
