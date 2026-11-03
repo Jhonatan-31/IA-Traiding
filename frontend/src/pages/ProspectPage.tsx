@@ -13,6 +13,7 @@ export default function ProspectPage() {
   const [status, setStatus] = useState<Record<string, unknown> | null>(null);
   const [decisions, setDecisions] = useState<Record<string, unknown>[]>([]);
   const [bench, setBench] = useState<Record<string, unknown> | null>(null);
+  const [audit, setAudit] = useState<Record<string, unknown> | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
@@ -24,7 +25,7 @@ export default function ProspectPage() {
   const load = useCallback(async () => {
     setError(null);
     try {
-      const [s, d, b] = await Promise.all([
+      const [s, d, b, a] = await Promise.all([
         api.prospectStatus(),
         api.prospectDecisions(80, {
           experiment_type: typeFilter || undefined,
@@ -33,10 +34,12 @@ export default function ProspectPage() {
           strategy: strategyFilter || undefined,
         }),
         api.prospectBenchmarks(),
+        api.prospectAudit(),
       ]);
       setStatus(s);
       setDecisions(d);
       setBench(b);
+      setAudit(a);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Error");
     }
@@ -94,6 +97,21 @@ export default function ProspectPage() {
     }
   }
 
+  async function runReconcile() {
+    setBusy(true);
+    try {
+      const r = await api.prospectReconcile();
+      setMsg(
+        `Reconciliación: críticas=${(r.critical as unknown[])?.length ?? 0}, avisos=${(r.warnings as unknown[])?.length ?? 0}, block_entries=${String(r.block_new_entries)}`
+      );
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Error");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const counts = (status?.counts as Record<string, number>) || {};
   const virt = (status?.virtual_ledger as Record<string, unknown>) || {};
   const byType = (status?.counts_by_type as Record<string, Record<string, number>>) || {};
@@ -106,6 +124,12 @@ export default function ProspectPage() {
   const openAlerts = (status?.open_alerts as Record<string, unknown>[]) || [];
   const dataClasses = (status?.data_classes as Record<string, string>) || {};
   const buyCi = (hypo.buy_net_ci as Record<string, unknown>) || {};
+  const cycles = (audit?.cycles as Record<string, unknown>[]) || [];
+  const recon = (audit?.reconciliation as Record<string, unknown>) || {};
+  const horizons = (recon.horizons_pending as Record<string, unknown>[]) || [];
+  const paperRecon = (recon.paper_sma as Record<string, unknown>) || {};
+  const virtId = ((recon.virtual_ledger as Record<string, unknown>)?.identity ||
+    {}) as Record<string, unknown>;
 
   return (
     <div>
@@ -123,6 +147,9 @@ export default function ProspectPage() {
           </button>
           <button className="btn" onClick={() => void evalAlerts()} disabled={busy}>
             Evaluar deterioro
+          </button>
+          <button className="btn" onClick={() => void runReconcile()} disabled={busy}>
+            Reconciliar
           </button>
           <button className="btn" onClick={() => void runResolve()} disabled={busy}>
             Resolver horizontes
@@ -166,6 +193,112 @@ export default function ProspectPage() {
         <p className="muted" style={{ fontSize: 12 }}>
           Observado: {dataClasses.observed || "—"} · Simulado: {dataClasses.simulated || "—"}
         </p>
+        <p className="muted" style={{ fontSize: 12 }}>
+          Duplicados evitados (ciclos recientes):{" "}
+          {String(audit?.duplicates_avoided_recent ?? "UNKNOWN")} · Próxima vela inferencia
+          open_ms: {String(audit?.next_candle_open_ms_for_inference ?? "UNKNOWN")} · Retraso
+          resolución medio: {fmtNum(audit?.resolution_lag_s_mean as number | null, 0)} s
+        </p>
+      </div>
+
+      <div className="card" style={{ marginBottom: 14 }}>
+        <h3>Últimos ciclos del scheduler</h3>
+        <div className="table-wrap">
+          <table className="data">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Inicio UTC</th>
+                <th>Duración s</th>
+                <th>OK</th>
+                <th>Nuevas</th>
+                <th>Skip/dup</th>
+                <th>Resueltas</th>
+                <th>Inválidas</th>
+              </tr>
+            </thead>
+            <tbody>
+              {cycles.length === 0 ? (
+                <tr>
+                  <td colSpan={8} className="muted">
+                    UNKNOWN — sin ciclos registrados
+                  </td>
+                </tr>
+              ) : (
+                cycles.map((c) => (
+                  <tr key={String(c.id)}>
+                    <td>{String(c.id)}</td>
+                    <td>{fmtTime(c.started_at as string)}</td>
+                    <td>{fmtNum(c.duration_s as number | null, 2)}</td>
+                    <td>{String(c.ok)}</td>
+                    <td>{String(c.decisions_new ?? 0)}</td>
+                    <td>{String(c.decisions_skipped ?? 0)}</td>
+                    <td>{String(c.resolved ?? 0)}</td>
+                    <td>{String(c.invalid ?? 0)}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className="card" style={{ marginBottom: 14 }}>
+        <h3>Reconciliación e integridad</h3>
+        <p>
+          Paper SMA: cash {fmtNum(paperRecon.cash as number | null, 2)} · pos{" "}
+          {String(paperRecon.positions ?? "UNKNOWN")} · trades{" "}
+          {String(paperRecon.trades ?? "UNKNOWN")} · ok={String(paperRecon.ok ?? "UNKNOWN")}
+        </p>
+        <p>
+          Ledger virtual identity ok={String(virtId.ok ?? "UNKNOWN")} · cash{" "}
+          {fmtNum(virtId.cash as number | null, 2)} · block_new_entries=
+          {String(recon.block_new_entries ?? "UNKNOWN")}
+        </p>
+        <p className="muted" style={{ fontSize: 12 }}>
+          Críticas: {JSON.stringify(recon.critical ?? [])} · Avisos:{" "}
+          {JSON.stringify(recon.warnings ?? [])}
+        </p>
+      </div>
+
+      <div className="card" style={{ marginBottom: 14 }}>
+        <h3>Horizontes PENDING (no adelantar)</h3>
+        <div className="table-wrap">
+          <table className="data">
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Símbolo</th>
+                <th>Acción</th>
+                <th>Vela origen UTC</th>
+                <th>Listo tras UTC</th>
+                <th>¿Listo?</th>
+                <th>Segundos</th>
+              </tr>
+            </thead>
+            <tbody>
+              {horizons.length === 0 ? (
+                <tr>
+                  <td colSpan={7} className="muted">
+                    Sin pendientes
+                  </td>
+                </tr>
+              ) : (
+                horizons.map((h) => (
+                  <tr key={String(h.id)}>
+                    <td>{String(h.id)}</td>
+                    <td>{String(h.symbol)}</td>
+                    <td>{String(h.action)}</td>
+                    <td>{fmtTime(h.candle_open_utc as string)}</td>
+                    <td>{fmtTime(h.horizon_ready_after_utc as string)}</td>
+                    <td>{String(h.horizon_ready)}</td>
+                    <td>{fmtNum(h.seconds_until_ready as number | null, 0)}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
 
       <div className="grid stats" style={{ marginBottom: 14 }}>
@@ -214,7 +347,13 @@ export default function ProspectPage() {
           {fmtNum(portfolio.vs_cash as number | null, 5)}
         </p>
         <p className="muted" style={{ fontSize: 12 }}>
-          {String(portfolio.warning ?? bench?.note ?? "")}
+          {String(
+            portfolio.evidence_label ||
+              portfolio.warning ||
+              audit?.evidence_label ||
+              bench?.note ||
+              "Evidencia insuficiente"
+          )}
         </p>
         {bySymbol.length > 0 && (
           <div className="table-wrap" style={{ marginTop: 8 }}>

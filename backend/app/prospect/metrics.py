@@ -68,8 +68,13 @@ def prospective_metrics(
         "sum_buy_nets": float(sum(buy_nets)) if buy_nets else 0.0,
         "vs_cash": (float(np.mean(buy_nets)) if buy_nets else 0.0) - 0.0,
         "insufficient_for_edge_claim": len(buy_nets) < 30,
+        "evidence_label": (
+            "Evidencia insuficiente"
+            if len(buy_nets) < 30
+            else "Muestra mínima alcanzada — aún requiere criterios pre-registrados"
+        ),
         "warning": (
-            "Sample too small for robust edge claim."
+            "Evidencia insuficiente"
             if len(buy_nets) < 30
             else "Still require pre-registered success criteria before PAPER_AI."
         ),

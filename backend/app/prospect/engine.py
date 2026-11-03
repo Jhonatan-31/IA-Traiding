@@ -43,6 +43,8 @@ async def run_shadow_live_cycle(
     symbols: list[str] | None = None,
     breaker_active: bool = False,
     breaker_reason: str | None = None,
+    block_new_entries: bool = False,
+    block_reason: str | None = None,
 ) -> dict[str, Any]:
     symbols = symbols or DEFAULT_SHADOW_LIVE_PROTOCOL["universe"]
     assumptions = ExecutionAssumptions()
@@ -58,10 +60,15 @@ async def run_shadow_live_cycle(
         "ml_mode": (runtime or {}).get("mode"),
         "engine_paused": bool(paused and paused.get("paused")),
         "timestamp": datetime.now(timezone.utc).isoformat(),
+        "block_new_entries": block_new_entries,
+        "real_trading": False,
+        "paper_ai": False,
     }
     risk_state = {
         "circuit_breaker_active": breaker_active,
         "circuit_breaker_reason": breaker_reason,
+        "recon_block_new_entries": block_new_entries,
+        "recon_block_reason": block_reason,
     }
 
     async with httpx.AsyncClient(
@@ -81,6 +88,8 @@ async def run_shadow_live_cycle(
                     action, reason = "HOLD", "warmup"
                 elif breaker_active:
                     action, reason = "HOLD", f"breaker_block:{breaker_reason}"
+                elif block_new_entries and f[i] > s[i]:  # type: ignore
+                    action, reason = "HOLD", f"recon_block:{block_reason or 'critical'}"
                 elif f[i] > s[i]:  # type: ignore
                     action, reason = "BUY", "sma10_gt_sma50"
                 else:

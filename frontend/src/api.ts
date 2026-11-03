@@ -383,6 +383,13 @@ export const api = {
     if (!res.ok) throw new Error(`prospect alerts → HTTP ${res.status}`);
     return res.json() as Promise<Record<string, unknown>>;
   },
+  prospectAudit: () => getJson<Record<string, unknown>>("/api/prospect/audit"),
+  prospectHorizons: () => getJson<Record<string, unknown>>("/api/prospect/horizons"),
+  prospectReconcile: async () => {
+    const res = await fetch("/api/prospect/reconcile", { method: "POST" });
+    if (!res.ok) throw new Error(`prospect reconcile → HTTP ${res.status}`);
+    return res.json() as Promise<Record<string, unknown>>;
+  },
   prospectShadowLiveRun: async () => {
     const res = await fetch("/api/prospect/shadow-live/run", { method: "POST" });
     if (!res.ok) throw new Error(`prospect shadow-live → HTTP ${res.status}`);

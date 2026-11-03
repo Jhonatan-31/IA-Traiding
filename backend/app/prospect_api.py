@@ -317,3 +317,111 @@ def prospect_alerts_evaluate():
         ensure_prospect_schema(c.execute)
         result = evaluate_degradation(c.execute)
     return serial(result)
+
+
+@router.get("/reconcile")
+def prospect_reconcile_get():
+    from .main import db, serial
+    from .prospect.reconcile import run_reconciliation
+
+    with db() as c:
+        ensure_prospect_schema(c.execute)
+        return serial(run_reconciliation(c.execute))
+
+
+@router.post("/reconcile")
+def prospect_reconcile_run():
+    from .main import db, serial
+    from .prospect.reconcile import run_reconciliation
+
+    with db() as c:
+        ensure_prospect_schema(c.execute)
+        return serial(run_reconciliation(c.execute))
+
+
+@router.get("/horizons")
+def prospect_horizons():
+    """Exact horizon expiry for PENDING SHADOW_LIVE — no early resolve."""
+    from .main import db, serial
+    from .prospect.reconcile import horizon_audit
+
+    with db() as c:
+        ensure_prospect_schema(c.execute)
+        rows = horizon_audit(c.execute)
+    ready = sum(1 for r in rows if r.get("horizon_ready"))
+    return serial(
+        {
+            "pending": rows,
+            "ready_count": ready,
+            "not_ready_count": len(rows) - ready,
+            "note": "Resolver solo cuando horizon_ready=true; no adelantar.",
+        }
+    )
+
+
+@router.get("/audit")
+def prospect_audit():
+    """Operational audit bundle for Etapa J — evidence only."""
+    from .main import db, serial, _age_seconds, _status_from_age
+    from .prospect.decisions import decision_counts
+    from .prospect.degradation import THRESHOLDS
+    from .prospect.metrics import prospective_metrics
+    from .prospect.reconcile import run_reconciliation
+
+    with db() as c:
+        ensure_prospect_schema(c.execute)
+        state = c.execute("SELECT * FROM shadow_scheduler_state WHERE id=1").fetchone()
+        cycles = list(
+            c.execute(
+                """SELECT id, started_at, finished_at, ok, decisions_new, decisions_skipped,
+                          resolved, invalid, error, meta_json,
+                          EXTRACT(EPOCH FROM (finished_at - started_at)) AS duration_s
+                   FROM shadow_scheduler_cycles ORDER BY id DESC LIMIT 20"""
+            )
+        )
+        live = decision_counts(c.execute, "SHADOW_LIVE")
+        recon = run_reconciliation(c.execute)
+        metrics = prospective_metrics(c.execute, experiment_type="SHADOW_LIVE")
+        # Next closed 1h candle open after last decision candle
+        last_candle = c.execute(
+            """SELECT MAX(candle_open_ms) AS ms FROM prospect_decisions d
+               JOIN prospect_experiments e ON e.id=d.experiment_id
+               WHERE e.experiment_type='SHADOW_LIVE'"""
+        ).fetchone()
+        next_infer_ms = (
+            int(last_candle["ms"]) + 3_600_000 if last_candle and last_candle["ms"] else None
+        )
+    hb_age = _age_seconds(state["heartbeat_at"] if state else None)
+    if not state or not state.get("heartbeat_at"):
+        health = "UNKNOWN"
+    elif state.get("status") == "ERROR":
+        health = "ERROR"
+    else:
+        health = _status_from_age(
+            hb_age, THRESHOLDS["scheduler_warn_s"], THRESHOLDS["scheduler_stale_s"]
+        )
+    # Resolution lag: for pending, mean seconds until ready (from recon horizons)
+    lags = [
+        r["seconds_until_ready"]
+        for r in recon.get("horizons_pending") or []
+        if r.get("seconds_until_ready") is not None
+    ]
+    return serial(
+        {
+            "scheduler_health": health,
+            "heartbeat_age_s": hb_age,
+            "state": state,
+            "cycles": cycles,
+            "counts_shadow_live": live,
+            "duplicates_avoided_recent": sum(
+                int(c.get("decisions_skipped") or 0) for c in cycles
+            ),
+            "next_candle_open_ms_for_inference": next_infer_ms,
+            "resolution_lag_s_mean": (sum(lags) / len(lags)) if lags else None,
+            "reconciliation": recon,
+            "metrics_shadow_live": metrics,
+            "evidence_label": (metrics.get("virtual_portfolio") or {}).get("evidence_label"),
+            "paper_ai_authorized": False,
+            "real_trading": False,
+        }
+    )

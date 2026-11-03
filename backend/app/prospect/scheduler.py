@@ -16,6 +16,7 @@ import psycopg
 from psycopg.rows import dict_row
 
 from .engine import run_shadow_live_cycle
+from .reconcile import run_reconciliation
 from .resolve import resolve_pending
 from .schema import ensure_prospect_schema
 
@@ -121,12 +122,20 @@ async def run_one_cycle() -> dict[str, Any]:
                 conn.commit()
                 raise
 
-            # 2) Infer / register SHADOW_LIVE (dedupe by unique index)
+            # 2) Reconciliation — may block new simulated BUY entries
+            recon = run_reconciliation(conn.execute)
+            conn.commit()
+            result["recon_block"] = bool(recon.get("block_new_entries"))
+            result["recon_critical_n"] = len(recon.get("critical") or [])
+
+            # 3) Infer / register SHADOW_LIVE (dedupe by unique index)
             try:
                 inf = await run_shadow_live_cycle(
                     db,
                     breaker_active=bool(breaker and breaker.get("active")),
                     breaker_reason=(breaker or {}).get("reason"),
+                    block_new_entries=bool(recon.get("block_new_entries")),
+                    block_reason="recon_critical" if recon.get("block_new_entries") else None,
                 )
                 items = inf.get("items") or []
                 new = sum(1 for x in items if "decision_id" in x)
@@ -139,9 +148,23 @@ async def run_one_cycle() -> dict[str, Any]:
                          last_inference_at=NOW(),
                          inference_errors=inference_errors+%s,
                          active_model_version=%s,
+                         meta_json=meta_json || %s::jsonb,
                          updated_at=NOW()
                        WHERE id=1""",
-                    (errs, model_ver),
+                    (
+                        errs,
+                        model_ver,
+                        json.dumps(
+                            {
+                                "last_recon": {
+                                    "block_new_entries": recon.get("block_new_entries"),
+                                    "critical": recon.get("critical"),
+                                    "warnings": recon.get("warnings"),
+                                    "checked_at": recon.get("checked_at"),
+                                }
+                            }
+                        ),
+                    ),
                 )
                 conn.commit()
             except Exception as iex:
@@ -155,6 +178,7 @@ async def run_one_cycle() -> dict[str, Any]:
                 raise
 
             result["ok"] = True
+            duration_s = (_now() - started).total_seconds()
             conn.execute(
                 """UPDATE shadow_scheduler_state SET
                      status='OK',
@@ -177,7 +201,14 @@ async def run_one_cycle() -> dict[str, Any]:
                     result["decisions_skipped"],
                     result["resolved"],
                     result["invalid"],
-                    json.dumps({"model_version": model_ver}),
+                    json.dumps(
+                        {
+                            "model_version": model_ver,
+                            "duration_s": duration_s,
+                            "recon_block": result.get("recon_block"),
+                            "duplicates_avoided": result["decisions_skipped"],
+                        }
+                    ),
                 ),
             )
             conn.commit()
