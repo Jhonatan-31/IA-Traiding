@@ -34,6 +34,12 @@ export type IndicatorPack = {
   ema9?: (number | null)[];
   ema21?: (number | null)[];
   ema50?: (number | null)[];
+  rsi14?: (number | null)[];
+  macd?: {
+    macd: (number | null)[];
+    signal: (number | null)[];
+    histogram: (number | null)[];
+  };
   bollinger?: {
     upper: (number | null)[];
     middle: (number | null)[];
@@ -62,31 +68,38 @@ function lineData(candles: Candle[], values: (number | null)[] | undefined) {
   return out;
 }
 
+function makeChart(el: HTMLElement, height: number) {
+  return createChart(el, {
+    autoSize: true,
+    height,
+    layout: {
+      background: { type: ColorType.Solid, color: "#121a2b" },
+      textColor: "#8fa3bb",
+    },
+    grid: {
+      vertLines: { color: "#1c2940" },
+      horzLines: { color: "#1c2940" },
+    },
+    rightPriceScale: { borderColor: "#2a3a55" },
+    timeScale: { borderColor: "#2a3a55", timeVisible: true },
+  });
+}
+
 export default function CandleChart({
   candles,
   indicators,
   enabled,
   markers,
 }: Props) {
-  const ref = useRef<HTMLDivElement | null>(null);
-  const chartRef = useRef<IChartApi | null>(null);
+  const mainRef = useRef<HTMLDivElement | null>(null);
+  const rsiRef = useRef<HTMLDivElement | null>(null);
+  const macdRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
-    if (!ref.current) return;
-    const chart = createChart(ref.current, {
-      autoSize: true,
-      layout: {
-        background: { type: ColorType.Solid, color: "#121a2b" },
-        textColor: "#8fa3bb",
-      },
-      grid: {
-        vertLines: { color: "#1c2940" },
-        horzLines: { color: "#1c2940" },
-      },
-      rightPriceScale: { borderColor: "#2a3a55" },
-      timeScale: { borderColor: "#2a3a55", timeVisible: true },
-    });
-    chartRef.current = chart;
+    if (!mainRef.current) return;
+    const charts: IChartApi[] = [];
+    const chart = makeChart(mainRef.current, 420);
+    charts.push(chart);
 
     const candleSeries = chart.addCandlestickSeries({
       upColor: "#2dd4bf",
@@ -95,7 +108,6 @@ export default function CandleChart({
       wickUpColor: "#2dd4bf",
       wickDownColor: "#f07178",
     });
-
     const volumeSeries = chart.addHistogramSeries({
       priceFormat: { type: "volume" },
       priceScaleId: "vol",
@@ -149,7 +161,9 @@ export default function CandleChart({
     const markerData = markers
       .map((m) => {
         const candle = candles.find(
-          (c) => c.close_time === m.candle_ms || c.open_time <= m.candle_ms && c.close_time >= m.candle_ms
+          (c) =>
+            c.close_time === m.candle_ms ||
+            (c.open_time <= m.candle_ms && c.close_time >= m.candle_ms)
         );
         const t = candle
           ? Math.floor(candle.open_time / 1000)
@@ -164,14 +178,64 @@ export default function CandleChart({
       })
       .sort((a, b) => Number(a.time) - Number(b.time));
     if (markerData.length) candleSeries.setMarkers(markerData);
-
     chart.timeScale().fitContent();
 
+    if (rsiRef.current && enabled.rsi && indicators?.rsi14) {
+      const rsiChart = makeChart(rsiRef.current, 140);
+      charts.push(rsiChart);
+      const s = rsiChart.addLineSeries({ color: "#e6c07b", lineWidth: 2 });
+      s.setData(lineData(candles, indicators.rsi14));
+      rsiChart.timeScale().fitContent();
+      chart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
+        if (range) rsiChart.timeScale().setVisibleLogicalRange(range);
+      });
+    }
+
+    if (macdRef.current && enabled.macd && indicators?.macd) {
+      const macdChart = makeChart(macdRef.current, 150);
+      charts.push(macdChart);
+      const hist = macdChart.addHistogramSeries({ priceScaleId: "hist" });
+      hist.setData(
+        lineData(candles, indicators.macd.histogram).map((d) => ({
+          time: d.time,
+          value: d.value,
+          color: d.value >= 0 ? "rgba(45,212,191,0.5)" : "rgba(240,113,120,0.5)",
+        }))
+      );
+      const macdLine = macdChart.addLineSeries({ color: "#61afef", lineWidth: 2 });
+      macdLine.setData(lineData(candles, indicators.macd.macd));
+      const sig = macdChart.addLineSeries({ color: "#c678dd", lineWidth: 2 });
+      sig.setData(lineData(candles, indicators.macd.signal));
+      macdChart.timeScale().fitContent();
+      chart.timeScale().subscribeVisibleLogicalRangeChange((range) => {
+        if (range) macdChart.timeScale().setVisibleLogicalRange(range);
+      });
+    }
+
     return () => {
-      chart.remove();
-      chartRef.current = null;
+      charts.forEach((c) => c.remove());
     };
   }, [candles, indicators, enabled, markers]);
 
-  return <div ref={ref} style={{ width: "100%", height: 460 }} />;
+  return (
+    <div>
+      <div ref={mainRef} style={{ width: "100%", height: 420 }} />
+      {enabled.rsi && (
+        <div style={{ marginTop: 8 }}>
+          <div className="muted" style={{ fontSize: 12, marginBottom: 4 }}>
+            RSI14
+          </div>
+          <div ref={rsiRef} style={{ width: "100%", height: 140 }} />
+        </div>
+      )}
+      {enabled.macd && (
+        <div style={{ marginTop: 8 }}>
+          <div className="muted" style={{ fontSize: 12, marginBottom: 4 }}>
+            MACD
+          </div>
+          <div ref={macdRef} style={{ width: "100%", height: 150 }} />
+        </div>
+      )}
+    </div>
+  );
 }

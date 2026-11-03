@@ -19,18 +19,34 @@ export default function HealthPage() {
   const [alerts, setAlerts] = useState<AlertRow[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   async function load() {
     setError(null);
-    const [s, a] = await Promise.all([api.system(), api.alerts()]);
-    setSystem(s);
-    setAlerts(a);
+    let attempt = 0;
+    while (attempt < 3) {
+      try {
+        const [s, a] = await Promise.all([api.system(), api.alerts()]);
+        setSystem(s);
+        setAlerts(a);
+        setLoading(false);
+        return;
+      } catch (e) {
+        attempt += 1;
+        if (attempt >= 3) {
+          setError(e instanceof Error ? e.message : "Error");
+          setLoading(false);
+        } else {
+          await new Promise((r) => setTimeout(r, 400 * 2 ** (attempt - 1)));
+        }
+      }
+    }
   }
 
   useEffect(() => {
-    void load().catch((e) => setError(e instanceof Error ? e.message : "Error"));
+    void load();
     const id = setInterval(() => {
-      void load().catch(() => undefined);
+      void load();
     }, 20000);
     return () => clearInterval(id);
   }, []);
@@ -63,6 +79,7 @@ export default function HealthPage() {
         </button>
       </div>
       {error && <div className="error-box">{error}</div>}
+      {loading && !system && <p className="muted">Cargando System Health…</p>}
 
       <div className="grid stats" style={{ marginBottom: 16 }}>
         {Object.entries(comps).map(([name, c]) => (

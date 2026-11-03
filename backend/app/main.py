@@ -17,6 +17,8 @@ from . import alerts as alerts_mod
 from . import indicators
 from . import ohlcv as ohlcv_mod
 from . import risk as risk_mod
+from .ml.schema import ensure_ml_schema
+from .ml_api import router as ml_router
 
 DATABASE_URL = os.environ["DATABASE_URL"]
 BASE = "https://data-api.binance.vision/api/v3"
@@ -120,6 +122,7 @@ def setup():
         ):
             c.execute(stmt)
         alerts_mod.ensure_alert_schema(c.execute)
+        ensure_ml_schema(c.execute)
 
 
 def log_event(level: str, message: str) -> None:
@@ -478,6 +481,7 @@ async def lifespan(app):
 
 
 app = FastAPI(title="AI Trading Bot - PAPER ONLY", lifespan=lifespan)
+app.include_router(ml_router)
 
 
 def serial(rows):

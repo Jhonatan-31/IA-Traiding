@@ -83,6 +83,11 @@ export default function OverviewPage() {
           <span className={`pill ${overview?.engine?.paused ? "warn" : "ok"}`}>
             {overview?.engine?.paused ? "PAUSADO" : "MOTOR ACTIVO"}
           </span>
+          <span
+            className={`pill ${(overview?.open_alerts ?? 0) > 0 ? "warn" : "ok"}`}
+          >
+            Alertas: {overview?.open_alerts ?? 0}
+          </span>
           <button className="btn" onClick={() => void load()}>
             Actualizar
           </button>
@@ -90,6 +95,11 @@ export default function OverviewPage() {
       </div>
 
       {error && <div className="error-box">{error}</div>}
+      {(overview?.open_alerts ?? 0) > 0 && (
+        <div className="card" style={{ marginBottom: 14, borderColor: "#e6c07b" }}>
+          Hay {overview?.open_alerts} alerta(s) abierta(s). Revisar System Health.
+        </div>
+      )}
 
       <div className="grid stats" style={{ marginBottom: 16 }}>
         <div className="card">

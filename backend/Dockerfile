@@ -5,4 +5,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY app ./app
 COPY tests ./tests
 COPY pytest.ini .
+RUN mkdir -p /artifacts/datasets /artifacts/models
+ENV ML_ARTIFACT_DIR=/artifacts
 CMD ["uvicorn","app.main:app","--host","0.0.0.0","--port","8000"]

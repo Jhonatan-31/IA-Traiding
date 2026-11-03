@@ -18,6 +18,9 @@ services:
     restart: unless-stopped
     environment:
       DATABASE_URL: postgresql://paper:${DB_PASSWORD:?Set DB_PASSWORD}@db:5432/paper
+      ML_ARTIFACT_DIR: /artifacts
+    volumes:
+      - ml_artifacts:/artifacts
     depends_on:
       db:
         condition: service_healthy
@@ -29,6 +32,9 @@ services:
       DATABASE_URL: postgresql://paper:${DB_PASSWORD:?Set DB_PASSWORD}@db:5432/paper
       SCAN_LIMIT: ${SCAN_LIMIT:-25}
       SCAN_EVERY_SECONDS: ${SCAN_EVERY_SECONDS:-3600}
+      ML_ARTIFACT_DIR: /artifacts
+    volumes:
+      - ml_artifacts:/artifacts
     depends_on:
       db:
         condition: service_healthy
@@ -38,5 +44,22 @@ services:
     ports:
       - "127.0.0.1:8088:8080"
     depends_on: [api]
+  ml-train:
+    build: ./backend
+    profiles: ["ml"]
+    command: ["python", "-m", "app.ml.job"]
+    environment:
+      DATABASE_URL: postgresql://paper:${DB_PASSWORD:?Set DB_PASSWORD}@db:5432/paper
+      ML_ARTIFACT_DIR: /artifacts
+      ML_INTERVAL: ${ML_INTERVAL:-1h}
+      ML_MAX_BARS: ${ML_MAX_BARS:-800}
+      ML_SYMBOLS: ${ML_SYMBOLS:-BTCUSDT,ETHUSDT,BNBUSDT,SOLUSDT,XRPUSDT,ADAUSDT,DOGEUSDT,AVAXUSDT,LINKUSDT,DOTUSDT,LTCUSDT,ATOMUSDT,NEARUSDT,UNIUSDT,AAVEUSDT}
+    volumes:
+      - ml_artifacts:/artifacts
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
 volumes:
   paper_data:
+  ml_artifacts:

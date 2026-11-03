@@ -13,6 +13,8 @@ const DEFAULT_TOGGLES: Record<string, boolean> = {
   ema21: false,
   ema50: false,
   bollinger: false,
+  rsi: true,
+  macd: true,
 };
 
 export default function ChartsPage() {

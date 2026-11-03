@@ -27,6 +27,10 @@ temp/
 # Local DB dumps (keep folder, ignore contents optionally)
 backups/*.sql
 
+# ML artifacts (volume/local)
+artifacts/
+*.pkl
+
 # Node
 node_modules/
 dist/

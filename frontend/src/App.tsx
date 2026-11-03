@@ -1,12 +1,14 @@
+import { Suspense, lazy } from "react";
 import { NavLink, Route, Routes } from "react-router-dom";
-import OverviewPage from "./pages/OverviewPage";
-import MarketsPage from "./pages/MarketsPage";
-import TradesPage from "./pages/TradesPage";
-import StrategiesPage from "./pages/StrategiesPage";
-import AiPage from "./pages/AiPage";
-import RiskPage from "./pages/RiskPage";
-import HealthPage from "./pages/HealthPage";
-import ChartsPage from "./pages/ChartsPage";
+
+const OverviewPage = lazy(() => import("./pages/OverviewPage"));
+const MarketsPage = lazy(() => import("./pages/MarketsPage"));
+const TradesPage = lazy(() => import("./pages/TradesPage"));
+const StrategiesPage = lazy(() => import("./pages/StrategiesPage"));
+const AiPage = lazy(() => import("./pages/AiPage"));
+const RiskPage = lazy(() => import("./pages/RiskPage"));
+const HealthPage = lazy(() => import("./pages/HealthPage"));
+const ChartsPage = lazy(() => import("./pages/ChartsPage"));
 
 const links = [
   { to: "/", label: "Resumen" },
@@ -18,6 +20,10 @@ const links = [
   { to: "/risk", label: "Gestión de riesgo" },
   { to: "/health", label: "System Health" },
 ];
+
+function PageLoader() {
+  return <p className="muted">Cargando módulo…</p>;
+}
 
 export default function App() {
   return (
@@ -45,16 +51,18 @@ export default function App() {
         </div>
       </aside>
       <main className="content">
-        <Routes>
-          <Route path="/" element={<OverviewPage />} />
-          <Route path="/markets" element={<MarketsPage />} />
-          <Route path="/charts" element={<ChartsPage />} />
-          <Route path="/trades" element={<TradesPage />} />
-          <Route path="/strategies" element={<StrategiesPage />} />
-          <Route path="/ai" element={<AiPage />} />
-          <Route path="/risk" element={<RiskPage />} />
-          <Route path="/health" element={<HealthPage />} />
-        </Routes>
+        <Suspense fallback={<PageLoader />}>
+          <Routes>
+            <Route path="/" element={<OverviewPage />} />
+            <Route path="/markets" element={<MarketsPage />} />
+            <Route path="/charts" element={<ChartsPage />} />
+            <Route path="/trades" element={<TradesPage />} />
+            <Route path="/strategies" element={<StrategiesPage />} />
+            <Route path="/ai" element={<AiPage />} />
+            <Route path="/risk" element={<RiskPage />} />
+            <Route path="/health" element={<HealthPage />} />
+          </Routes>
+        </Suspense>
       </main>
     </div>
   );

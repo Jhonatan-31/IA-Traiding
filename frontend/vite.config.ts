@@ -9,4 +9,14 @@ export default defineConfig({
       "/api": "http://127.0.0.1:8088",
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          react: ["react", "react-dom", "react-router-dom"],
+          charts: ["lightweight-charts", "recharts"],
+        },
+      },
+    },
+  },
 });

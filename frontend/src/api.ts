@@ -9,6 +9,7 @@ export type Overview = {
   trades: number;
   strategy: string;
   disclaimer: string;
+  open_alerts?: number;
   latest: {
     id: number;
     at: string;
@@ -22,6 +23,40 @@ export type Overview = {
     updated_at: string;
     reason: string | null;
   } | null;
+};
+
+export type MlStatus = {
+  state: string;
+  runtime: {
+    mode: string;
+    active_model_version: string | null;
+    notes: string | null;
+  } | null;
+  latest_model: {
+    version: string;
+    status: string;
+    created_at: string;
+    validated_for_research: boolean;
+    mean_roc_auc_hist_gb: number | null;
+    mean_roc_auc_naive: number | null;
+    disclaimer: string | null;
+  } | null;
+  prediction_count: number;
+  pending_resolution: number;
+  datasets: number;
+  execution_policy: string;
+};
+
+export type MlPrediction = {
+  id: number;
+  created_at: string;
+  model_version: string;
+  symbol: string;
+  probability: number;
+  proposed_action: string;
+  accepted: boolean;
+  reject_reason: string | null;
+  observed_label: number | null;
 };
 
 export type Position = {
@@ -265,6 +300,17 @@ export const api = {
     const res = await fetch(`/api/alerts/${id}/ack`, { method: "POST" });
     if (!res.ok) throw new Error(`ack → HTTP ${res.status}`);
     return res.json();
+  },
+  mlStatus: () => getJson<MlStatus>("/api/ml/status"),
+  mlPredictions: (limit = 50) =>
+    getJson<MlPrediction[]>(`/api/ml/predictions?limit=${limit}`),
+  mlComparison: () => getJson<Record<string, unknown>>("/api/ml/comparison"),
+  mlShadowRun: async (limit_symbols = 10) => {
+    const res = await fetch(`/api/ml/shadow/run?limit_symbols=${limit_symbols}`, {
+      method: "POST",
+    });
+    if (!res.ok) throw new Error(`shadow/run → HTTP ${res.status}`);
+    return res.json() as Promise<{ generated: number; items: unknown[] }>;
   },
 };
 

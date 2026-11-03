@@ -7,14 +7,27 @@ export default function RiskPage() {
   const [msg, setMsg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [loading, setLoading] = useState(true);
 
   async function load() {
     setError(null);
-    const [oRes, rRes] = await Promise.allSettled([api.overview(), api.risk()]);
-    if (oRes.status === "fulfilled") setOverview(oRes.value);
-    else setError(`overview: ${String(oRes.reason)}`);
-    if (rRes.status === "fulfilled") setRisk(rRes.value);
-    else setError((prev) => `${prev ?? ""} risk: ${String(rRes.reason)}`.trim());
+    let attempt = 0;
+    while (attempt < 3) {
+      const [oRes, rRes] = await Promise.allSettled([api.overview(), api.risk()]);
+      if (oRes.status === "fulfilled") setOverview(oRes.value);
+      if (rRes.status === "fulfilled") setRisk(rRes.value);
+      if (oRes.status === "fulfilled" || rRes.status === "fulfilled") {
+        setLoading(false);
+        if (oRes.status === "rejected") setError(`overview: ${String(oRes.reason)}`);
+        if (rRes.status === "rejected")
+          setError((prev) => `${prev ?? ""} risk: ${String(rRes.reason)}`.trim());
+        return;
+      }
+      attempt += 1;
+      await new Promise((r) => setTimeout(r, 400 * 2 ** (attempt - 1)));
+    }
+    setLoading(false);
+    setError("No se pudo cargar riesgo/overview tras reintentos");
   }
 
   useEffect(() => {
@@ -68,6 +81,7 @@ export default function RiskPage() {
         </div>
       </div>
       {error && <div className="error-box">{error}</div>}
+      {loading && !risk && <p className="muted">Cargando métricas de riesgo…</p>}
       {msg && (
         <div className="card" style={{ marginBottom: 14, borderColor: "#2dd4bf" }}>
           {msg}
