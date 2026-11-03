@@ -321,6 +321,8 @@ export const api = {
   mlPredictionsSummary: () =>
     getJson<Record<string, unknown>>("/api/ml/predictions/summary"),
   mlComparison: () => getJson<Record<string, unknown>>("/api/ml/comparison"),
+  mlResearchLatest: () => getJson<Record<string, unknown>>("/api/ml/research/latest"),
+  mlMetricsAudit: () => getJson<Record<string, unknown>>("/api/ml/metrics-audit"),
   mlCircuitBreaker: () => getJson<Record<string, unknown>>("/api/ml/circuit-breaker"),
   mlCircuitEvaluate: async () => {
     const res = await fetch("/api/ml/circuit-breaker/evaluate", { method: "POST" });

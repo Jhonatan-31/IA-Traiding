@@ -211,6 +211,78 @@ def ml_predictions_summary():
     )
 
 
+@router.get("/metrics-audit")
+def ml_metrics_audit():
+    from .ml.metrics_audit import METRIC_UNITS
+
+    return {
+        "units": METRIC_UNITS,
+        "etapa_f_net_return_sum": (
+            "Sum of per-trade fractional returns after costs — NOT portfolio equity %."
+        ),
+        "shadow_replay_mean_net_return": (
+            "Average of hypothetical long nets including HOLD rows; not executable PnL."
+        ),
+        "etapa_g_portfolio": (
+            "total_return_fraction = final_equity/initial - 1 under next-bar open execution."
+        ),
+        "ci_warning": (
+            "IID bootstrap overstates precision with overlapping trades and cross-asset correlation. "
+            "Prefer block bootstrap and portfolio holdout."
+        ),
+        "calibration_logloss": (
+            "Isotonic may worsen LogLoss while improving Brier/ECE; not an economic edge."
+        ),
+        "doc": "docs/ETAPA_G_METRICS_AUDIT.md",
+    }
+
+
+@router.get("/research/latest")
+def ml_research_latest():
+    from .main import serial
+
+    path = Path(os.environ.get("ML_ARTIFACT_DIR", "/artifacts")) / "research" / "last_research.json"
+    if not path.exists():
+        return {
+            "available": False,
+            "message": "Sin informe de investigación. Ejecute: docker compose --profile ml run --rm ml-research",
+        }
+    import json
+
+    data = json.loads(path.read_text(encoding="utf-8"))
+    # Keep response bounded
+    return serial(
+        {
+            "available": True,
+            "created_at": data.get("created_at"),
+            "conclusion": data.get("conclusion"),
+            "robust_edge_any": data.get("robust_edge_any"),
+            "paper_ai_authorized": data.get("paper_ai_authorized"),
+            "execution_model": data.get("execution_model"),
+            "dataset": data.get("dataset"),
+            "selection_best": data.get("selection_window", {}).get("best_by_total_return"),
+            "selection_results": data.get("selection_window", {}).get("results"),
+            "holdout_results": data.get("final_holdout", {}).get("results"),
+            "preselected_holdout": data.get("final_holdout", {}).get("preselected_holdout"),
+            "cost_sensitivity": data.get("cost_sensitivity"),
+            "expected_return_example": data.get("expected_return_example"),
+            "shadow_replay_caveat": data.get("shadow_replay_caveat"),
+            "multiple_testing": data.get("multiple_testing"),
+            "metric_units": data.get("metric_units"),
+        }
+    )
+
+
+@router.get("/strategies")
+def ml_strategies():
+    from .ml.strategies import list_strategy_specs
+
+    return {
+        "strategies": list_strategy_specs(),
+        "note": "Ninguna estrategia se auto-activa. Solo investigación / Shadow.",
+    }
+
+
 @router.get("/comparison")
 def ml_comparison():
     from .main import db, serial

@@ -27,6 +27,7 @@ export default function AiPage() {
   const [resolved, setResolved] = useState<MlPrediction[]>([]);
   const [comparison, setComparison] = useState<Record<string, unknown> | null>(null);
   const [predSummary, setPredSummary] = useState<Record<string, unknown> | null>(null);
+  const [research, setResearch] = useState<Record<string, unknown> | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState<string | null>(null);
@@ -35,18 +36,20 @@ export default function AiPage() {
   const load = useCallback(async () => {
     setError(null);
     try {
-      const [s, p, r, c, sum] = await Promise.all([
+      const [s, p, r, c, sum, res] = await Promise.all([
         api.mlStatus(),
         api.mlPredictions(40),
         api.mlPredictions(40, { resolvedOnly: true }),
         api.mlComparison(),
         api.mlPredictionsSummary(),
+        api.mlResearchLatest(),
       ]);
       setStatus(s);
       setPreds(p);
       setResolved(r);
       setComparison(c);
       setPredSummary(sum);
+      setResearch(res);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Error de conexión");
     } finally {
@@ -229,7 +232,73 @@ export default function AiPage() {
       </div>
 
       <div className="card" style={{ marginBottom: 14 }}>
-        <h3>Comparativa de rentabilidad neta (walk-forward)</h3>
+        <h3>Investigación Etapa G — backtest de cartera (ejecución open t+1)</h3>
+        {!research?.available ? (
+          <p className="muted">
+            {(research?.message as string) ||
+              "Sin informe. Ejecute ml-research offline."}
+          </p>
+        ) : (
+          <>
+            <p style={{ fontSize: 13 }}>
+              {String(research.conclusion ?? "")}
+            </p>
+            <p className="muted" style={{ fontSize: 12 }}>
+              Unidad: fracción de equity de cartera (final/inicial − 1). No
+              comparable con Σ fracciones/trade de Etapa F. Edge robusto:{" "}
+              {research.robust_edge_any ? "sí (revisar)" : "no"} · PAPER_AI:{" "}
+              {research.paper_ai_authorized ? "sí" : "no"}
+            </p>
+            <div className="table-wrap">
+              <table className="data">
+                <thead>
+                  <tr>
+                    <th>Estrategia (holdout)</th>
+                    <th>Retorno cartera</th>
+                    <th>Max DD equity</th>
+                    <th>Trades</th>
+                    <th>PF trades</th>
+                    <th>Rechazos</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(
+                    (research.holdout_results as Record<string, unknown>[]) ||
+                    []
+                  ).map((row) => (
+                      <tr key={String(row.strategy)}>
+                        <td>{String(row.strategy)}</td>
+                        <td>
+                          {fmtNum(
+                            row.total_return_fraction as number | null,
+                            4
+                          )}
+                        </td>
+                        <td>
+                          {fmtNum(
+                            row.max_drawdown_equity as number | null,
+                            4
+                          )}
+                        </td>
+                        <td>{String(row.n_closed ?? "—")}</td>
+                        <td>
+                          {fmtNum(
+                            row.profit_factor_trades as number | null,
+                            3
+                          )}
+                        </td>
+                        <td>{String(row.n_rejected ?? "—")}</td>
+                      </tr>
+                    ))}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
+      </div>
+
+      <div className="card" style={{ marginBottom: 14 }}>
+        <h3>Comparativa Etapa F — Σ fracciones/trade (no equity)</h3>
         <p className="muted" style={{ fontSize: 12 }}>
           Misma política de costos (fee+slip ~0.4% round-trip).{" "}
           <strong>robust_edge</strong> solo si la media neta &gt; 0 y el IC95 inferior

@@ -20,6 +20,11 @@ def trade_stats(pnls: list[float]) -> dict[str, Any]:
             "max_drawdown": None,
             "profit_factor": None,
             "sharpe_approx": None,
+            "unit": "sum_per_trade_fractions",
+            "warning": (
+                "net_return_sum is Σ(per-trade fractions), not portfolio equity return. "
+                "IID bootstrap CI overstates precision under dependence."
+            ),
             "costs_note": "roundtrip fee+slip embedded in net_forward_return",
         }
     arr = np.asarray(pnls, dtype=float)
@@ -45,6 +50,11 @@ def trade_stats(pnls: list[float]) -> dict[str, Any]:
         "profit_factor": float(pf) if pf is not None else None,
         "sharpe_approx": sharpe,
         "net_return_ci": bootstrap_ci(list(arr)),
+        "unit": "sum_per_trade_fractions",
+        "warning": (
+            "net_return_sum is Σ(per-trade fractions), not portfolio equity return. "
+            "IID bootstrap CI overstates precision under dependence."
+        ),
         "costs_note": "roundtrip fee+slip embedded in net_forward_return",
     }
 
