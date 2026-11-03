@@ -26,6 +26,7 @@ from .orders import claim_new_orders, enqueue_order, mark_order
 from .risk import (
     accounting_ok,
     can_buy,
+    can_protective_sell,
     ensure_daily_equity,
     evaluate_lab_breaker,
     lab_equity,
@@ -215,12 +216,36 @@ async def process_orders(db_factory) -> dict[str, Any]:
                 elif side == "SELL":
                     mark, age = await _ticker(client, symbol)
                     with db_factory() as c:
-                        if mark is None or (age is not None and age > PRICE_STALE_S):
+                        meta = order.get("meta_json") or {}
+                        if isinstance(meta, str):
+                            meta = json.loads(meta)
+                        exit_reason = meta.get("exit_reason") or "strategy_exit"
+                        has_pos = bool(
+                            c.execute(
+                                """SELECT 1 FROM lab_positions
+                                   WHERE account_id=%s AND symbol=%s""",
+                                (ACCOUNT_ID, symbol),
+                            ).fetchone()
+                        )
+                        data_fresh = mark is not None and (
+                            age is None or age <= PRICE_STALE_S
+                        )
+                        fill_preview_ok = bool(mark and mark > 0)
+                        ok_sell, why_sell = can_protective_sell(
+                            paused=paused,
+                            breaker_active=active,
+                            data_fresh=data_fresh,
+                            fill_ok=fill_preview_ok,
+                            has_position=has_pos,
+                            exit_reason=exit_reason,
+                        )
+                        if not ok_sell:
+                            status = "CANCELLED" if why_sell == "executor_paused" else "REJECTED"
                             mark_order(
                                 c.execute,
                                 oid,
-                                status="REJECTED",
-                                reject_reason="stale_or_missing_mark",
+                                status=status,
+                                reject_reason=why_sell,
                             )
                             c.execute(
                                 """UPDATE lab_executor_state SET
@@ -228,22 +253,8 @@ async def process_orders(db_factory) -> dict[str, Any]:
                             )
                             summary["rejected"] += 1
                             summary["items"].append(
-                                {
-                                    "id": oid,
-                                    "status": "REJECTED",
-                                    "reason": "stale_or_missing_mark",
-                                }
+                                {"id": oid, "status": status, "reason": why_sell}
                             )
-                            continue
-                        # Risk exits still process when breaker active; only skip if paused
-                        if paused:
-                            mark_order(
-                                c.execute,
-                                oid,
-                                status="CANCELLED",
-                                reject_reason="executor_paused",
-                            )
-                            summary["rejected"] += 1
                             continue
                         fill = estimate_fill_price(
                             side="SELL",
@@ -265,9 +276,7 @@ async def process_orders(db_factory) -> dict[str, Any]:
                             summary["rejected"] += 1
                             continue
                         uid = str(order["order_uid"])
-                        meta = order.get("meta_json") or {}
-                        if isinstance(meta, str):
-                            meta = json.loads(meta)
+                        # Execution price from fill model ≠ stop trigger price
                         result = apply_sell(
                             c.execute,
                             order_uid=uid,
@@ -275,7 +284,7 @@ async def process_orders(db_factory) -> dict[str, Any]:
                             fill_price=_d(fill["price"]),
                             candle_ms=int(order["candle_ms"]),
                             strategy=STRATEGY,
-                            reason=meta.get("exit_reason") or "lab_auto_sell",
+                            reason=exit_reason,
                             stop_triggered=bool(meta.get("stop_triggered")),
                             stop_trigger_price=_d(meta["stop_trigger_price"])
                             if meta.get("stop_trigger_price") is not None

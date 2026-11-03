@@ -56,6 +56,16 @@ async def lab_status():
                 (ACCOUNT_ID,),
             )
         )
+        sell_history = list(
+            c.execute(
+                """SELECT id, at, symbol, qty, price, fee, slip, reason, realized_pnl,
+                          order_uid, candle_ms, strategy
+                   FROM lab_trades
+                   WHERE account_id=%s AND side='SELL'
+                   ORDER BY id DESC LIMIT 40""",
+                (ACCOUNT_ID,),
+            )
+        )
         cycles = list(
             c.execute(
                 """SELECT * FROM lab_cycles ORDER BY id DESC LIMIT 20"""
@@ -213,7 +223,22 @@ async def lab_status():
             "orders_rejected": rejected,
             "orders_filled_recent": fills,
             "trades": trades,
+            "sell_history": sell_history,
             "positions": valuation.get("positions") or snap["positions"],
+            "exit_policy": {
+                "stop_loss_pct": 0.02,
+                "take_profit_pct": 0.04,
+                "max_hold_bars": 48,
+                "priority": [
+                    "stale_or_missing_mark",
+                    "stop_loss",
+                    "take_profit",
+                    "max_hold_bars",
+                    "strategy_exit",
+                ],
+                "protective_sells_when_breaker": True,
+                "sells_when_paused": False,
+            },
             "cycles": cycles,
             "last_cycle": last_cycle,
             "breaker_events": breaker_events,

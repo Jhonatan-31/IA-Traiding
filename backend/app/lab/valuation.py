@@ -155,6 +155,20 @@ def portfolio_valuation(
     else:
         drawdown = None
 
+    from .positions_audit import enrich_positions
+
+    # Merge raw exit fields (sl/tp %) onto MTM rows before enrich
+    raw_by_sym = {p["symbol"]: dict(p) for p in positions}
+    for row in pos_rows:
+        raw = raw_by_sym.get(row["symbol"]) or {}
+        row.setdefault("stop_loss_pct", raw.get("stop_loss_pct"))
+        row.setdefault("take_profit_pct", raw.get("take_profit_pct"))
+        row.setdefault("max_hold_bars", raw.get("max_hold_bars"))
+        row.setdefault("opened_at", raw.get("opened_at"))
+        row.setdefault("opened_candle_ms", raw.get("opened_candle_ms"))
+        row.setdefault("qty", row.get("qty"))
+    enriched = enrich_positions(pos_rows, marks)
+
     return {
         "valuation_status": valuation_status,
         "cash": float(cash),
@@ -168,10 +182,11 @@ def portfolio_valuation(
         "drawdown_vs_peak": drawdown,
         "peak_equity": float(peak),
         "initial_capital": float(initial),
-        "positions": pos_rows,
+        "positions": enriched,
         "note": (
             "Valoración incompleta: faltan precios válidos; no se inventan marks."
             if valuation_status == "INCOMPLETE"
-            else "MTM con ticker público Binance; fees/slip ya embebidos en fills."
+            else "MTM con ticker público Binance; fees/slip ya embebidos en fills. "
+            "Mark observado ≠ precio de ejecución simulado."
         ),
     }

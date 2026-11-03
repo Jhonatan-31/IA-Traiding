@@ -297,6 +297,25 @@ async def scan_and_enqueue(
                     else:
                         summary["signals"] += 1
                     signal_id = (sig.get("signal") or {}).get("id")
+                    # Never enqueue SELL without open lab inventory (no phantom sells)
+                    if side == "SELL":
+                        pos = c.execute(
+                            """SELECT 1 FROM lab_positions
+                               WHERE account_id=%s AND symbol=%s""",
+                            (ACCOUNT_ID, sym.upper()),
+                        ).fetchone()
+                        if not pos:
+                            summary["items"].append(
+                                {
+                                    "symbol": sym,
+                                    "side": side,
+                                    "candle_ms": candle_ms,
+                                    "enqueued": False,
+                                    "reason": "sell_skipped_no_position",
+                                    "cross_state": analysis.get("cross_state"),
+                                }
+                            )
+                            continue
                     enq = enqueue_order(
                         c.execute,
                         signal_id=signal_id,
@@ -306,7 +325,11 @@ async def scan_and_enqueue(
                         ref_price=ref,
                         budget=BUDGET if side == "BUY" else None,
                         strategy=STRATEGY,
-                        meta={"account": ACCOUNT_ID, "signal_reason": analysis.get("reason")},
+                        meta={
+                            "account": ACCOUNT_ID,
+                            "signal_reason": analysis.get("reason"),
+                            "exit_reason": "strategy_exit" if side == "SELL" else None,
+                        },
                     )
                     if enq.get("created"):
                         summary["enqueued"] += 1

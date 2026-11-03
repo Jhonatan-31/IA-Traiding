@@ -113,6 +113,8 @@ export default function AutoTradePage() {
   const equityHist = (status?.equity_history as Record<string, unknown>[]) || [];
   const evals = (status?.signal_evals_recent as Record<string, unknown>[]) || [];
   const organic = (status?.organic_signals as Record<string, unknown>[]) || [];
+  const sellHistory = (status?.sell_history as Record<string, unknown>[]) || [];
+  const exitPolicy = (status?.exit_policy as Record<string, unknown>) || {};
 
   return (
     <div>
@@ -462,24 +464,37 @@ export default function AutoTradePage() {
       </div>
 
       <div className="card" style={{ marginBottom: 14 }}>
-        <h3>Posiciones lab (MTM)</h3>
+        <h3>Posiciones abiertas y salidas</h3>
+        <p className="muted" style={{ fontSize: 12 }}>
+          Política: SL {(Number(exitPolicy.stop_loss_pct) * 100 || 2).toFixed(0)}% · TP{" "}
+          {(Number(exitPolicy.take_profit_pct) * 100 || 4).toFixed(0)}% · max{" "}
+          {String(exitPolicy.max_hold_bars ?? 48)} barras · prioridad{" "}
+          {Array.isArray(exitPolicy.priority)
+            ? (exitPolicy.priority as string[]).join(" → ")
+            : "SL → TP → time → SMA"}
+          . Mark observado ≠ ejecución simulada (slip).
+        </p>
         <div className="table-wrap">
           <table className="data">
             <thead>
               <tr>
                 <th>Símbolo</th>
                 <th>Qty</th>
+                <th>Entrada</th>
+                <th>Mark obs.</th>
+                <th>Exec. est.</th>
+                <th>SL</th>
+                <th>TP</th>
+                <th>Barras rest.</th>
                 <th>Coste</th>
-                <th>Mark</th>
-                <th>Fuente</th>
-                <th>MV</th>
                 <th>uPnL</th>
+                <th>Datos</th>
               </tr>
             </thead>
             <tbody>
               {positions.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="muted">
+                  <td colSpan={11} className="muted">
                     Sin posiciones lab
                   </td>
                 </tr>
@@ -488,20 +503,91 @@ export default function AutoTradePage() {
                   <tr key={String(p.symbol)}>
                     <td>{String(p.symbol)}</td>
                     <td>{fmtNum(p.qty as number, 6)}</td>
+                    <td>{fmtNum(p.entry_price as number, 4)}</td>
+                    <td>
+                      {(p.mark_price_observed ?? p.mark_price) == null
+                        ? "—"
+                        : fmtNum(
+                            (p.mark_price_observed ?? p.mark_price) as number,
+                            4
+                          )}
+                    </td>
+                    <td>
+                      {p.estimated_sell_execution_price == null
+                        ? "—"
+                        : fmtNum(p.estimated_sell_execution_price as number, 4)}
+                    </td>
+                    <td>
+                      {p.stop_loss_price == null
+                        ? "—"
+                        : fmtNum(p.stop_loss_price as number, 4)}
+                    </td>
+                    <td>
+                      {p.take_profit_price == null
+                        ? "—"
+                        : fmtNum(p.take_profit_price as number, 4)}
+                    </td>
+                    <td>{String(p.bars_remaining ?? "—")}</td>
                     <td>{fmtNum(p.cost as number, 2)}</td>
-                    <td>
-                      {p.mark_price == null ? "—" : fmtNum(p.mark_price as number, 4)}
-                    </td>
-                    <td>{String(p.mark_source ?? "—")}</td>
-                    <td>
-                      {p.market_value == null
-                        ? "INCOMPLETO"
-                        : fmtNum(p.market_value as number, 2)}
-                    </td>
                     <td>
                       {p.unrealized_pnl == null
                         ? "—"
                         : fmtNum(p.unrealized_pnl as number, 4)}
+                    </td>
+                    <td>{String(p.data_status ?? "—")}</td>
+                  </tr>
+                ))
+              )}
+            </tbody>
+          </table>
+        </div>
+        <p>
+          Patrimonio est.:{" "}
+          {val.equity_estimate == null
+            ? "INCOMPLETO"
+            : fmtNum(val.equity_estimate as number, 2)}{" "}
+          · P/L realizado: {fmtNum(val.realized_pnl as number | null, 4)} · Fees:{" "}
+          {fmtNum(val.fees_accumulated as number | null, 4)}
+        </p>
+      </div>
+
+      <div className="card" style={{ marginBottom: 14 }}>
+        <h3>Historial de ventas (cierres)</h3>
+        <div className="table-wrap">
+          <table className="data">
+            <thead>
+              <tr>
+                <th>UTC</th>
+                <th>Símbolo</th>
+                <th>Qty</th>
+                <th>Precio exec.</th>
+                <th>Fee</th>
+                <th>Slip</th>
+                <th>Motivo</th>
+                <th>PnL real.</th>
+              </tr>
+            </thead>
+            <tbody>
+              {sellHistory.length === 0 ? (
+                <tr>
+                  <td colSpan={8} className="muted">
+                    Sin ventas lab registradas
+                  </td>
+                </tr>
+              ) : (
+                sellHistory.map((s) => (
+                  <tr key={String(s.id)}>
+                    <td>{fmtTime(s.at as string)}</td>
+                    <td>{String(s.symbol)}</td>
+                    <td>{fmtNum(s.qty as number, 6)}</td>
+                    <td>{fmtNum(s.price as number, 4)}</td>
+                    <td>{fmtNum(s.fee as number, 4)}</td>
+                    <td>{fmtNum(s.slip as number, 4)}</td>
+                    <td>{String(s.reason || "—")}</td>
+                    <td>
+                      {s.realized_pnl == null
+                        ? "—"
+                        : fmtNum(s.realized_pnl as number, 4)}
                     </td>
                   </tr>
                 ))

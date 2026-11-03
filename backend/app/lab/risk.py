@@ -138,6 +138,19 @@ def critical_condition_still_active(execute: Callable) -> tuple[bool, str | None
     return False, None
 
 
+# Explicit protective-sell policy (Etapa O):
+# - Circuit breaker blocks NEW buys; protective exits may still run.
+# - Operator pause blocks buys AND sells (human stop).
+# - Never liquidate without a fresh executable mark.
+PROTECTIVE_SELL_POLICY = {
+    "allowed_when_breaker_active": True,
+    "allowed_when_paused": False,
+    "requires_fresh_mark": True,
+    "never_liquidate_without_price": True,
+    "exit_reasons": ("stop_loss", "take_profit", "max_hold_bars", "strategy_exit"),
+}
+
+
 def can_buy(
     *,
     paused: bool,
@@ -170,6 +183,33 @@ def can_buy(
         return False, "max_positions"
     if budget > cash:
         return False, "insufficient_cash"
+    return True, "ok"
+
+
+def can_protective_sell(
+    *,
+    paused: bool,
+    breaker_active: bool,
+    data_fresh: bool,
+    fill_ok: bool,
+    has_position: bool,
+    exit_reason: str | None,
+) -> tuple[bool, str]:
+    """Gate for lab sells. Breaker does not block protective exits."""
+    if not has_position:
+        return False, "no_position"
+    if paused and not PROTECTIVE_SELL_POLICY["allowed_when_paused"]:
+        return False, "executor_paused"
+    if not data_fresh and PROTECTIVE_SELL_POLICY["requires_fresh_mark"]:
+        return False, "stale_or_missing_mark"
+    if not fill_ok and PROTECTIVE_SELL_POLICY["never_liquidate_without_price"]:
+        return False, "no_executable_price"
+    # breaker_active intentionally ignored for protective sells
+    _ = breaker_active
+    if exit_reason and exit_reason not in PROTECTIVE_SELL_POLICY["exit_reasons"]:
+        # still allow labeled lab sells / strategy
+        if exit_reason not in ("lab_auto_sell", "demo_verification_sell"):
+            return False, "exit_reason_not_allowed"
     return True, "ok"
 
 
