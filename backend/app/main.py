@@ -19,6 +19,8 @@ from . import ohlcv as ohlcv_mod
 from . import risk as risk_mod
 from .ml.schema import ensure_ml_schema
 from .ml_api import router as ml_router
+from .lab.schema import ensure_lab_schema
+from .lab_api import router as lab_router
 from .prospect.schema import ensure_prospect_schema
 from .prospect_api import router as prospect_router
 
@@ -126,6 +128,7 @@ def setup():
         alerts_mod.ensure_alert_schema(c.execute)
         ensure_ml_schema(c.execute)
         ensure_prospect_schema(c.execute)
+        ensure_lab_schema(c.execute)
 
 
 def log_event(level: str, message: str) -> None:
@@ -518,6 +521,7 @@ async def lifespan(app):
 app = FastAPI(title="AI Trading Bot - PAPER ONLY", lifespan=lifespan)
 app.include_router(ml_router)
 app.include_router(prospect_router)
+app.include_router(lab_router)
 
 
 def serial(rows):

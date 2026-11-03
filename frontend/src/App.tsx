@@ -10,6 +10,7 @@ const RiskPage = lazy(() => import("./pages/RiskPage"));
 const HealthPage = lazy(() => import("./pages/HealthPage"));
 const ChartsPage = lazy(() => import("./pages/ChartsPage"));
 const ProspectPage = lazy(() => import("./pages/ProspectPage"));
+const AutoTradePage = lazy(() => import("./pages/AutoTradePage"));
 
 const links = [
   { to: "/", label: "Resumen" },
@@ -19,6 +20,7 @@ const links = [
   { to: "/strategies", label: "Estrategias" },
   { to: "/ai", label: "Inteligencia artificial" },
   { to: "/prospect", label: "Prospectivo" },
+  { to: "/auto-trade", label: "Trading Automático" },
   { to: "/risk", label: "Gestión de riesgo" },
   { to: "/health", label: "System Health" },
 ];
@@ -70,6 +72,7 @@ export default function App() {
             <Route path="/strategies" element={<StrategiesPage />} />
             <Route path="/ai" element={<AiPage />} />
             <Route path="/prospect" element={<ProspectPage />} />
+            <Route path="/auto-trade" element={<AutoTradePage />} />
             <Route path="/risk" element={<RiskPage />} />
             <Route path="/health" element={<HealthPage />} />
           </Routes>

@@ -408,6 +408,31 @@ export const api = {
       still_pending: number;
     }>;
   },
+  labStatus: () => getJson<Record<string, unknown>>("/api/lab/status"),
+  labPause: async (token: string, reason = "dashboard_pause") => {
+    const res = await fetch(`/api/lab/pause?reason=${encodeURIComponent(reason)}`, {
+      method: "POST",
+      headers: { "X-Lab-Token": token },
+    });
+    if (!res.ok) throw new Error(`lab pause → HTTP ${res.status}`);
+    return res.json();
+  },
+  labResume: async (token: string, reason = "dashboard_resume") => {
+    const res = await fetch(`/api/lab/resume?reason=${encodeURIComponent(reason)}`, {
+      method: "POST",
+      headers: { "X-Lab-Token": token },
+    });
+    if (!res.ok) throw new Error(`lab resume → HTTP ${res.status}`);
+    return res.json();
+  },
+  labCycle: async (token: string) => {
+    const res = await fetch("/api/lab/cycle", {
+      method: "POST",
+      headers: { "X-Lab-Token": token },
+    });
+    if (!res.ok) throw new Error(`lab cycle → HTTP ${res.status}`);
+    return res.json() as Promise<Record<string, unknown>>;
+  },
 };
 
 export function fmtNum(n: number | null | undefined, digits = 4): string {

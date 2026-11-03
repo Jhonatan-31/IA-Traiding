@@ -19,6 +19,7 @@ services:
     environment:
       DATABASE_URL: postgresql://paper:${DB_PASSWORD:?Set DB_PASSWORD}@db:5432/paper
       ML_ARTIFACT_DIR: /artifacts
+      LAB_CONTROL_TOKEN: ${LAB_CONTROL_TOKEN:-paper}
     volumes:
       - ml_artifacts:/artifacts
     depends_on:
@@ -52,6 +53,21 @@ services:
       DATABASE_URL: postgresql://paper:${DB_PASSWORD:?Set DB_PASSWORD}@db:5432/paper
       ML_ARTIFACT_DIR: /artifacts
       SHADOW_EVERY_SECONDS: ${SHADOW_EVERY_SECONDS:-300}
+      TZ: UTC
+    volumes:
+      - ml_artifacts:/artifacts
+    depends_on:
+      db:
+        condition: service_healthy
+  trade-executor:
+    build: ./backend
+    command: ["python", "-m", "app.lab.runner"]
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://paper:${DB_PASSWORD:?Set DB_PASSWORD}@db:5432/paper
+      ML_ARTIFACT_DIR: /artifacts
+      LAB_EVERY_SECONDS: ${LAB_EVERY_SECONDS:-300}
+      LAB_CONTROL_TOKEN: ${LAB_CONTROL_TOKEN:-paper}
       TZ: UTC
     volumes:
       - ml_artifacts:/artifacts
