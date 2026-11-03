@@ -143,19 +143,25 @@ def portfolio_valuation(
     if equity is not None and initial > 0:
         ret = float((equity - initial) / initial)
 
-    # Drawdown vs peak from daily equity table if available
-    peak_row = execute(
-        """SELECT MAX(COALESCE(end_equity, start_equity)) AS peak
-           FROM lab_equity_daily WHERE account_id=%s""",
-        (ACCOUNT_ID,),
-    ).fetchone()
-    peak = _d(peak_row["peak"]) if peak_row and peak_row["peak"] is not None else initial
-    if equity is not None and peak > 0:
-        drawdown = float((peak - equity) / peak) if equity < peak else 0.0
+    # Drawdown vs peak: MUST use max(start_equity, end_equity), not COALESCE(end, start).
+    # COALESCE(end, start) discarded the opening peak (e.g. 1000) whenever end < start.
+    from .reconcile_valuation import drawdown_fraction, peak_equity_from_daily_rows
+
+    daily_rows = list(
+        execute(
+            """SELECT day, start_equity, end_equity FROM lab_equity_daily
+               WHERE account_id=%s ORDER BY day""",
+            (ACCOUNT_ID,),
+        )
+    )
+    peak = peak_equity_from_daily_rows(daily_rows, initial)
+    if equity is not None:
+        drawdown = drawdown_fraction(equity=_d(equity), peak=peak)
     else:
         drawdown = None
 
     from .positions_audit import enrich_positions
+    from .reconcile_valuation import reconcile_lab_snapshot
 
     # Merge raw exit fields (sl/tp %) onto MTM rows before enrich
     raw_by_sym = {p["symbol"]: dict(p) for p in positions}
@@ -169,6 +175,15 @@ def portfolio_valuation(
         row.setdefault("qty", row.get("qty"))
     enriched = enrich_positions(pos_rows, marks)
 
+    recon = reconcile_lab_snapshot(
+        cash=cash,
+        positions=[dict(p) for p in positions],
+        marks=marks or {},
+        fees_accumulated=fees,
+        realized_pnl=realized,
+        initial_capital=initial,
+    )
+
     return {
         "valuation_status": valuation_status,
         "cash": float(cash),
@@ -180,13 +195,25 @@ def portfolio_valuation(
         "fees_accumulated": float(fees),
         "return_vs_initial": ret,
         "drawdown_vs_peak": drawdown,
+        "drawdown_vs_peak_pct": (drawdown * 100.0) if drawdown is not None else None,
         "peak_equity": float(peak),
+        "peak_basis": "max(initial, start_equity, end_equity) from lab_equity_daily",
+        "equity_daily": [
+            {
+                "day": str(r["day"]),
+                "start_equity": float(r["start_equity"]) if r["start_equity"] is not None else None,
+                "end_equity": float(r["end_equity"]) if r["end_equity"] is not None else None,
+            }
+            for r in daily_rows
+        ],
         "initial_capital": float(initial),
+        "reconciliation": recon,
         "positions": enriched,
         "note": (
             "Valoración incompleta: faltan precios válidos; no se inventan marks."
             if valuation_status == "INCOMPLETE"
             else "MTM con ticker público Binance; fees/slip ya embebidos en fills. "
-            "Mark observado ≠ precio de ejecución simulado."
+            "Mark observado ≠ precio de ejecución simulado. "
+            "drawdown_vs_peak = (peak−equity)/peak (fracción); no confundir con return_vs_initial."
         ),
     }

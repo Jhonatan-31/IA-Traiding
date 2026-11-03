@@ -261,9 +261,13 @@ export default function AutoTradePage() {
             {String(val.valuation_status || "UNKNOWN")}
           </span>{" "}
           · MV posiciones: {fmtNum(val.market_value_positions as number | null, 2)} · Fees:{" "}
-          {fmtNum(val.fees_accumulated as number | null, 4)} · Retorno:{" "}
-          {fmtNum(val.return_vs_initial as number | null, 4)} · DD:{" "}
-          {fmtNum(val.drawdown_vs_peak as number | null, 4)}
+          {fmtNum(val.fees_accumulated as number | null, 4)} · Retorno vs inicial:{" "}
+          {fmtNum(val.return_vs_initial as number | null, 4)} · DD vs peak:{" "}
+          {fmtNum(val.drawdown_vs_peak as number | null, 6)} (
+          {val.drawdown_vs_peak_pct == null
+            ? "—"
+            : fmtNum(val.drawdown_vs_peak_pct as number, 4)}
+          %) · peak {fmtNum(val.peak_equity as number | null, 2)}
         </p>
         <p className="muted" style={{ fontSize: 12 }}>
           {String(val.note || "")}
