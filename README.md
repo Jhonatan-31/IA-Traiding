@@ -1,23 +1,67 @@
-# AI Trading Bot para Windows + Docker Desktop
+# AI Trading Bot Pro (PAPER ONLY)
 
-Fase de laboratorio. **Sin claves, sin billetera y sin trading real.** Solo datos públicos de Binance, cruces SMA10/50 y simulación virtual, con PostgreSQL + FastAPI + dashboard HTML servido desde Nginx. No utiliza React en esta reconstrucción ligera del paquete: el dashboard es HTML/JS y se puede migrar a React en la siguiente iteración sin cambiar la API.
+Laboratorio de simulación sobre Binance Spot **público**. Sin claves privadas, sin billetera y sin órdenes reales. No promete ganancias.
 
-## Instalación en PowerShell
+## Ruta del proyecto (verificada)
 
-1. Copiar carpeta `ai_trading_bot_windows` a `C:\TradingBot`.
-2. Abrir PowerShell y `cd C:\TradingBot\ai_trading_bot_windows`.
-3. `Copy-Item .env.example .env`
-4. `notepad .env` y cambiar `DB_PASSWORD` por cadena alfanumérica robusta sin caracteres especiales de URL.
-5. `docker compose up -d --build`
-6. `docker compose ps`
-7. `docker compose logs --tail=50 worker`
-8. Abrir `http://localhost:8088`.
+`C:\Users\JHONATAN RINCON\OneDrive\Escritorio\MESA DE TRABAJO\IA BOT TRAIDING`
 
-## Limitaciones
+La ruta `C:\TradingBot\ai_trading_bot_windows` **no existe** en este entorno.
 
-- Simulación ilustrativa; no es backtest de ejecución, ni predicción IA ni promesa de ganancias.
-- Cotizaciones sobre cierre de vela, slippage fijo y comisiones supuestas. No considera profundidad de libro ni liquidez a nivel de orden.
-- Escanea hasta 25 pares con suficiente volumen; puede modificarse `SCAN_LIMIT` hasta 500.
-- La base de datos persiste en volumen Docker. No usar `docker compose down -v` sin intención de borrarla.
-- Dashboard solo accesible en localhost; evitar publicar sin autenticación.
-- Antes de operar dinero real, verificar normas colombianas, restricciones de exchange, seguridad y pruebas cuantitativas.
+## Stack
+
+- Docker Desktop + WSL 2
+- PostgreSQL 16 (`iabottraiding_paper_data`)
+- FastAPI + worker paper trading (SMA10/SMA50 1h)
+- Dashboard React + TypeScript + Vite (Nginx)
+
+## Arranque (PowerShell)
+
+```powershell
+cd "C:\Users\JHONATAN RINCON\OneDrive\Escritorio\MESA DE TRABAJO\IA BOT TRAIDING"
+Copy-Item .env.example .env   # solo si no existe
+# Editar DB_PASSWORD (alfanumérico, sin caracteres especiales de URL)
+docker compose up -d --build
+docker compose ps
+docker compose logs --tail=50 worker
+```
+
+Abrir: http://localhost:8088
+
+## Comandos útiles
+
+```powershell
+docker compose logs -f api worker dashboard
+docker stats --no-stream
+docker compose exec -T db psql -U paper -d paper -c "SELECT * FROM account;"
+# Backup (antes de migraciones)
+docker compose exec -T db pg_dump -U paper -d paper --no-owner --no-acl > backups\paper_backup.sql
+```
+
+## Rollback seguro
+
+- **No** ejecutar `docker compose down -v` (borra el volumen).
+- Revertir código: `git checkout -- .` o volver a un commit previo.
+- Restaurar SQL: `Get-Content backups\archivo.sql | docker compose exec -T db psql -U paper -d paper`
+- Tras recrear `api`, si hay 502: `docker compose restart dashboard`
+
+## API principal
+
+| Método | Ruta | Uso |
+|--------|------|-----|
+| GET | `/api/health` | Health real (incluye DB) |
+| GET | `/api/overview` | Resumen cartera |
+| GET | `/api/positions` | Posiciones + P/L no realizado |
+| GET | `/api/trades` | Historial |
+| GET | `/api/scans` | Equity por ciclo |
+| GET | `/api/markets` | Precios cacheados |
+| GET | `/api/system` | Observabilidad básica |
+| GET | `/api/diagnostics/binance` | Ping público Binance |
+| POST | `/api/engine/pause` | Pausar simulación |
+| POST | `/api/engine/resume` | Reanudar |
+
+## Limitaciones actuales
+
+- Gráficas OHLCV, IA entrenada, backtesting completo y alertas externas: pendientes.
+- Métricas ausentes se muestran como **Sin datos** (no se inventan).
+- Otros contenedores Docker del host no pertenecen a este proyecto y no deben tocarse.

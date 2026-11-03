@@ -23,3 +23,12 @@ Thumbs.db
 .cache/
 tmp/
 temp/
+
+# Local DB dumps (keep folder, ignore contents optionally)
+backups/*.sql
+
+# Node
+node_modules/
+dist/
+frontend/node_modules/
+frontend/dist/
