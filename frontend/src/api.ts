@@ -55,6 +55,8 @@ export type Scan = {
   markets: number;
   errors: number;
   equity: number | null;
+  cycle_ms?: number | null;
+  last_candle_ms?: number | null;
 };
 
 export type Market = {
@@ -67,14 +69,28 @@ export type Market = {
 
 export type SystemInfo = {
   mode: string;
+  checked_at?: string;
   engine: Overview["engine"];
   last_scan: Scan | null;
   last_trade_at: string | null;
   prices_max_at: string | null;
   counts: Record<string, number>;
   binance_base: string;
+  binance?: BinanceDiag;
   scan_limit: number;
   scan_every_seconds: number;
+  failed_requests_24h?: number;
+  open_alerts?: number;
+  components?: Record<
+    string,
+    { status: string; evidence?: unknown; latency_ms?: number }
+  >;
+  recent_errors?: Array<{
+    id: number;
+    at: string;
+    level: string;
+    message: string;
+  }>;
   audit: Array<{
     id: number;
     at: string;
@@ -82,6 +98,7 @@ export type SystemInfo = {
     action: string;
     detail: string | null;
   }>;
+  ohlcv_cache?: Record<string, number>;
   notes: string[];
 };
 
@@ -100,6 +117,103 @@ export type BinanceDiag = {
   error?: string;
   base: string;
   checked_at: string;
+};
+
+export type Candle = {
+  open_time: number;
+  close_time: number;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+  volume: number;
+  quote_volume: number;
+  is_closed: boolean;
+};
+
+export type CandleResponse = {
+  symbol: string;
+  interval: string;
+  fetched_at: string;
+  count: number;
+  closed_count: number;
+  forming: Candle | null;
+  candles: Candle[];
+  cache: string;
+  trade_markers: Array<{
+    id: number;
+    at: string;
+    side: string;
+    qty: number;
+    price: number;
+    candle_ms: number;
+    strategy: string | null;
+    reason: string | null;
+  }>;
+  indicators?: {
+    sma10: (number | null)[];
+    sma20: (number | null)[];
+    sma50: (number | null)[];
+    sma200: (number | null)[];
+    ema9: (number | null)[];
+    ema21: (number | null)[];
+    ema50: (number | null)[];
+    rsi14: (number | null)[];
+    atr14: (number | null)[];
+    macd: {
+      macd: (number | null)[];
+      signal: (number | null)[];
+      histogram: (number | null)[];
+    };
+    bollinger: {
+      upper: (number | null)[];
+      middle: (number | null)[];
+      lower: (number | null)[];
+    };
+  };
+};
+
+export type RiskReport = {
+  cash: number;
+  invested_cost: number;
+  positions_market_value: number | null;
+  unrealized_pnl: number | null;
+  realized_pnl: number;
+  fees_estimated: number;
+  equity_estimate: number | null;
+  open_positions: number;
+  total_exposure_pct_of_initial: number | null;
+  drawdown: {
+    current_drawdown_pct: number | null;
+    max_drawdown_pct: number | null;
+    peak_equity: number | null;
+    points: number;
+  };
+  daily_pnl_pct_vs_first_scan: number | null;
+  exposure_by_asset: Array<{
+    symbol: string;
+    cost: number;
+    market_value: number | null;
+    unrealized_pnl: number | null;
+    valuation: string;
+    price_source?: string | null;
+  }>;
+  limits: Record<string, number>;
+  breaches: string[];
+  classification: Record<string, string>;
+  disclaimer: string;
+};
+
+export type AlertRow = {
+  id: number;
+  created_at: string;
+  updated_at: string;
+  severity: string;
+  code: string;
+  title: string;
+  detail: string | null;
+  status: string;
+  fingerprint: string;
 };
 
 async function getJson<T>(path: string): Promise<T> {
@@ -131,6 +245,25 @@ export const api = {
       method: "POST",
     });
     if (!res.ok) throw new Error(`resume → HTTP ${res.status}`);
+    return res.json();
+  },
+  candles: (symbol: string, interval: string, limit = 300, indicators = true) =>
+    getJson<CandleResponse>(
+      `/api/candles?symbol=${encodeURIComponent(symbol)}&interval=${encodeURIComponent(interval)}&limit=${limit}&indicators=${indicators}`
+    ),
+  risk: () => getJson<RiskReport>("/api/risk"),
+  alerts: (status?: string) =>
+    getJson<AlertRow[]>(
+      status ? `/api/alerts?status=${encodeURIComponent(status)}` : "/api/alerts"
+    ),
+  evaluateAlerts: async () => {
+    const res = await fetch("/api/alerts/evaluate", { method: "POST" });
+    if (!res.ok) throw new Error(`alerts/evaluate → HTTP ${res.status}`);
+    return res.json();
+  },
+  ackAlert: async (id: number) => {
+    const res = await fetch(`/api/alerts/${id}/ack`, { method: "POST" });
+    if (!res.ok) throw new Error(`ack → HTTP ${res.status}`);
     return res.json();
   },
 };

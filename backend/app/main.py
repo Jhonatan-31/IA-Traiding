@@ -3,14 +3,20 @@ from __future__ import annotations
 
 import asyncio
 import os
+import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from decimal import Decimal
 
 import httpx
 import psycopg
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Query
 from psycopg.rows import dict_row
+
+from . import alerts as alerts_mod
+from . import indicators
+from . import ohlcv as ohlcv_mod
+from . import risk as risk_mod
 
 DATABASE_URL = os.environ["DATABASE_URL"]
 BASE = "https://data-api.binance.vision/api/v3"
@@ -95,15 +101,36 @@ def setup():
                 detail TEXT
             )"""
         )
-        # Additive columns for richer trade journal (safe if already present)
+        c.execute(
+            """CREATE TABLE IF NOT EXISTS collector_events(
+                id BIGSERIAL PRIMARY KEY,
+                at TIMESTAMPTZ DEFAULT NOW(),
+                level TEXT NOT NULL,
+                message TEXT NOT NULL
+            )"""
+        )
         for stmt in (
             "ALTER TABLE trades ADD COLUMN IF NOT EXISTS fee_rate NUMERIC",
             "ALTER TABLE trades ADD COLUMN IF NOT EXISTS slip_rate NUMERIC",
             "ALTER TABLE trades ADD COLUMN IF NOT EXISTS strategy TEXT",
             "ALTER TABLE trades ADD COLUMN IF NOT EXISTS reason TEXT",
             "ALTER TABLE prices ADD COLUMN IF NOT EXISTS source TEXT",
+            "ALTER TABLE scans ADD COLUMN IF NOT EXISTS cycle_ms INTEGER",
+            "ALTER TABLE scans ADD COLUMN IF NOT EXISTS last_candle_ms BIGINT",
         ):
             c.execute(stmt)
+        alerts_mod.ensure_alert_schema(c.execute)
+
+
+def log_event(level: str, message: str) -> None:
+    try:
+        with db() as c:
+            c.execute(
+                "INSERT INTO collector_events(level, message) VALUES(%s,%s)",
+                (level, message[:500]),
+            )
+    except Exception:
+        print("EVENT_LOG_FAIL", level, message, flush=True)
 
 
 def is_paused() -> bool:
@@ -127,6 +154,7 @@ def set_paused(paused: bool, reason: str, actor: str = "api") -> dict:
 
 
 def signal(bars):
+    """Only closed bars must be passed by caller."""
     if len(bars) < 51:
         return "HOLD"
     closes = [Decimal(str(r[4])) for r in bars]
@@ -144,7 +172,7 @@ def signal(bars):
 async def get(client: httpx.AsyncClient, path: str, retries: int = 4, **params):
     delay = 1.0
     last_exc: Exception | None = None
-    for attempt in range(retries):
+    for _ in range(retries):
         try:
             r = await client.get(BASE + path, params=params)
             if r.status_code in (418, 429):
@@ -166,13 +194,23 @@ async def get(client: httpx.AsyncClient, path: str, retries: int = 4, **params):
     raise RuntimeError(f"Binance request failed after retries: {last_exc}")
 
 
+def _record_scan(scanned, errors, equity, cycle_ms, last_candle_ms):
+    with db() as c:
+        c.execute(
+            """INSERT INTO scans(markets, errors, equity, cycle_ms, last_candle_ms)
+               VALUES(%s,%s,%s,%s,%s)""",
+            (scanned, errors, equity, cycle_ms, last_candle_ms),
+        )
+
+
 async def cycle(client: httpx.AsyncClient):
+    t0 = time.perf_counter()
+    last_candle_ms = None
     if is_paused():
         print("PAPER_ONLY paused — skipping entries/exits", flush=True)
         with db() as c:
             holdings = list(c.execute("SELECT * FROM positions"))
             cash = c.execute("SELECT cash FROM account WHERE id=1").fetchone()["cash"]
-        # Still refresh live marks while paused (no new trades)
         try:
             allprices = await get(client, "/ticker/price")
             lookup = {x["symbol"]: Decimal(str(x["price"])) for x in allprices}
@@ -190,12 +228,11 @@ async def cycle(client: httpx.AsyncClient):
                     if holdings and all(p["symbol"] in lookup for p in holdings)
                     else cash
                 )
-                c.execute(
-                    "INSERT INTO scans(markets, errors, equity) VALUES(%s,%s,%s)",
-                    (0, 0, equity),
-                )
+            cycle_ms = int((time.perf_counter() - t0) * 1000)
+            _record_scan(0, 0, equity, cycle_ms, None)
             print("PAPER_ONLY paused markets 0 errors 0 equity", equity, flush=True)
         except Exception as exc:
+            log_event("ERROR", f"paused_refresh {type(exc).__name__}: {exc}")
             print("COLLECTOR_ERROR paused_refresh", type(exc).__name__, str(exc), flush=True)
         return
 
@@ -228,10 +265,11 @@ async def cycle(client: httpx.AsyncClient):
         try:
             rows = await get(client, "/klines", symbol=symbol, interval="1h", limit=55)
             now = int(datetime.now(timezone.utc).timestamp() * 1000)
-            bars = [r for r in rows if int(r[6]) < now]
+            bars = [r for r in rows if int(r[6]) < now]  # closed only for signals
             if len(bars) < 51:
                 continue
             end = int(bars[-1][6])
+            last_candle_ms = end
             price = Decimal(str(bars[-1][4]))
             side = signal(bars)
             with db() as c:
@@ -255,9 +293,7 @@ async def cycle(client: httpx.AsyncClient):
                     if n < MAX_POSITIONS and budget >= MIN_BUDGET:
                         fill = price * (1 + SLIP)
                         qty = (budget * (1 - FEE)) / fill
-                        c.execute(
-                            "UPDATE account SET cash=cash-%s WHERE id=1", (budget,)
-                        )
+                        c.execute("UPDATE account SET cash=cash-%s WHERE id=1", (budget,))
                         c.execute(
                             "INSERT INTO positions VALUES(%s,%s,%s)",
                             (symbol, qty, budget),
@@ -281,9 +317,7 @@ async def cycle(client: httpx.AsyncClient):
                     qty = position["qty"]
                     fill = price * (1 - SLIP)
                     proceeds = qty * fill * (1 - FEE)
-                    c.execute(
-                        "UPDATE account SET cash=cash+%s WHERE id=1", (proceeds,)
-                    )
+                    c.execute("UPDATE account SET cash=cash+%s WHERE id=1", (proceeds,))
                     c.execute("DELETE FROM positions WHERE symbol=%s", (symbol,))
                     c.execute(
                         """INSERT INTO trades(symbol,side,qty,price,candle_ms,fee_rate,slip_rate,strategy,reason)
@@ -303,6 +337,7 @@ async def cycle(client: httpx.AsyncClient):
             scanned += 1
         except (httpx.HTTPError, ValueError, KeyError, IndexError, RuntimeError) as e:
             errors += 1
+            log_event("ERROR", f"MARKET_ERROR {symbol}: {e}")
             print("MARKET_ERROR", symbol, str(e), flush=True)
         await asyncio.sleep(0.15)
 
@@ -311,7 +346,6 @@ async def cycle(client: httpx.AsyncClient):
     with db() as c:
         holdings = list(c.execute("SELECT * FROM positions"))
         cash = c.execute("SELECT cash FROM account WHERE id=1").fetchone()["cash"]
-        # Refresh marks with live ticker for open positions + scanned set
         for sym in {p["symbol"] for p in holdings} | set(selected):
             if sym in lookup:
                 c.execute(
@@ -325,21 +359,107 @@ async def cycle(client: httpx.AsyncClient):
             if all(p["symbol"] in lookup for p in holdings)
             else None
         )
-        c.execute(
-            "INSERT INTO scans(markets, errors, equity) VALUES(%s,%s,%s)",
-            (scanned, errors, equity),
+    cycle_ms = int((time.perf_counter() - t0) * 1000)
+    _record_scan(scanned, errors, equity, cycle_ms, last_candle_ms)
+    print(
+        "PAPER_ONLY markets",
+        scanned,
+        "errors",
+        errors,
+        "equity",
+        equity,
+        "cycle_ms",
+        cycle_ms,
+        flush=True,
+    )
+    try:
+        await _refresh_alerts_safe()
+    except Exception as exc:
+        log_event("ERROR", f"alerts_eval {type(exc).__name__}: {exc}")
+
+
+async def _binance_probe() -> dict:
+    started = datetime.now(timezone.utc)
+    try:
+        async with httpx.AsyncClient(
+            timeout=10, headers={"User-Agent": "ResearchPaperBot/0.5-diag"}
+        ) as client:
+            r = await client.get(BASE + "/ping")
+            r.raise_for_status()
+            latency_ms = (datetime.now(timezone.utc) - started).total_seconds() * 1000
+            return {
+                "status": "ok",
+                "http_status": r.status_code,
+                "latency_ms": round(latency_ms, 1),
+                "base": BASE,
+                "checked_at": started.isoformat(),
+            }
+    except Exception as exc:
+        return {
+            "status": "error",
+            "error": type(exc).__name__,
+            "detail": str(exc)[:200],
+            "base": BASE,
+            "checked_at": started.isoformat(),
+        }
+
+
+def _load_risk_report() -> dict:
+    with db() as c:
+        cash = c.execute("SELECT cash FROM account WHERE id=1").fetchone()["cash"]
+        positions = list(
+            c.execute(
+                """SELECT p.*, pr.price, pr.source AS price_source
+                   FROM positions p LEFT JOIN prices pr USING(symbol)"""
+            )
         )
-    print("PAPER_ONLY markets", scanned, "errors", errors, "equity", equity, flush=True)
+        trades = list(c.execute("SELECT * FROM trades ORDER BY id"))
+        scans = list(c.execute("SELECT * FROM scans ORDER BY id"))
+        limits = c.execute("SELECT * FROM risk_limits WHERE id=1").fetchone() or {}
+    return risk_mod.build_risk_report(
+        cash=Decimal(str(cash)),
+        positions=positions,
+        trades=trades,
+        scans=scans,
+        initial_capital=START,
+        limits=dict(limits),
+    )
+
+
+async def _refresh_alerts_safe():
+    binance = await _binance_probe()
+    db_status = "ok"
+    try:
+        with db() as c:
+            c.execute("SELECT 1")
+            last_scan = c.execute(
+                "SELECT * FROM scans ORDER BY id DESC LIMIT 1"
+            ).fetchone()
+            price_age = c.execute("SELECT MAX(at) AS at FROM prices").fetchone()
+    except Exception:
+        db_status = "error"
+        last_scan = None
+        price_age = None
+    system = {
+        "db": db_status,
+        "binance": binance,
+        "last_scan": serial(last_scan) if last_scan else None,
+        "prices_max_at": serial(price_age["at"]) if price_age and price_age["at"] else None,
+        "scan_every_seconds": PERIOD,
+    }
+    risk_report = _load_risk_report() if db_status == "ok" else {"breaches": []}
+    alerts_mod.evaluate_alerts(db, risk_report, system)
 
 
 async def work():
     async with httpx.AsyncClient(
-        timeout=25, headers={"User-Agent": "ResearchPaperBot/0.4"}
+        timeout=25, headers={"User-Agent": "ResearchPaperBot/0.5"}
     ) as client:
         while True:
             try:
                 await cycle(client)
             except Exception as exc:
+                log_event("ERROR", f"COLLECTOR_ERROR {type(exc).__name__}: {exc}")
                 print("COLLECTOR_ERROR", type(exc).__name__, str(exc), flush=True)
             await asyncio.sleep(PERIOD)
 
@@ -375,6 +495,24 @@ def serial(rows):
     return normalize(rows)
 
 
+def _age_seconds(ts) -> float | None:
+    if ts is None:
+        return None
+    if isinstance(ts, str):
+        ts = datetime.fromisoformat(ts.replace("Z", "+00:00"))
+    return (datetime.now(timezone.utc) - ts).total_seconds()
+
+
+def _status_from_age(age: float | None, warn_s: float, err_s: float) -> str:
+    if age is None:
+        return "UNKNOWN"
+    if age <= warn_s:
+        return "OK"
+    if age <= err_s:
+        return "WARNING"
+    return "ERROR"
+
+
 @app.get("/api/overview")
 def overview():
     with db() as c:
@@ -390,6 +528,9 @@ def overview():
             """SELECT COALESCE(SUM(p.qty * pr.price),0) AS v
                FROM positions p LEFT JOIN prices pr USING(symbol)"""
         ).fetchone()["v"]
+        open_alerts = c.execute(
+            "SELECT COUNT(*) AS n FROM alerts WHERE status='OPEN'"
+        ).fetchone()["n"]
     equity = float(cash) + float(mv) if mv is not None else None
     return serial(
         {
@@ -403,6 +544,7 @@ def overview():
             "positions": pos,
             "trades": trades,
             "engine": engine,
+            "open_alerts": open_alerts,
             "strategy": STRATEGY,
             "disclaimer": "Simulación ilustrativa. No es consejo financiero ni promesa de ganancias.",
         }
@@ -414,11 +556,7 @@ def trades(limit: int = 50):
     limit = max(1, min(500, limit))
     with db() as c:
         return serial(
-            list(
-                c.execute(
-                    "SELECT * FROM trades ORDER BY id DESC LIMIT %s", (limit,)
-                )
-            )
+            list(c.execute("SELECT * FROM trades ORDER BY id DESC LIMIT %s", (limit,)))
         )
 
 
@@ -488,7 +626,10 @@ def health():
 
 
 @app.get("/api/system")
-def system():
+async def system():
+    t_api = time.perf_counter()
+    binance = await _binance_probe()
+    api_ms = round((time.perf_counter() - t_api) * 1000, 1)
     with db() as c:
         engine = c.execute("SELECT * FROM engine_state WHERE id=1").fetchone()
         last_scan = c.execute(
@@ -497,35 +638,88 @@ def system():
         last_trade = c.execute(
             "SELECT at FROM trades ORDER BY id DESC LIMIT 1"
         ).fetchone()
-        price_age = c.execute(
-            "SELECT MAX(at) AS at FROM prices"
-        ).fetchone()
-        audit = list(
+        price_age = c.execute("SELECT MAX(at) AS at FROM prices").fetchone()
+        audit = list(c.execute("SELECT * FROM audit_log ORDER BY id DESC LIMIT 20"))
+        events = list(
             c.execute(
-                "SELECT * FROM audit_log ORDER BY id DESC LIMIT 20"
+                "SELECT * FROM collector_events ORDER BY id DESC LIMIT 30"
             )
         )
+        open_alerts = c.execute(
+            "SELECT COUNT(*) AS n FROM alerts WHERE status='OPEN'"
+        ).fetchone()["n"]
+        failed_reqs = c.execute(
+            "SELECT COUNT(*) AS n FROM collector_events WHERE level='ERROR' AND at > NOW() - INTERVAL '24 hours'"
+        ).fetchone()["n"]
         counts = {
             "positions": c.execute("SELECT COUNT(*) AS n FROM positions").fetchone()["n"],
             "trades": c.execute("SELECT COUNT(*) AS n FROM trades").fetchone()["n"],
             "prices": c.execute("SELECT COUNT(*) AS n FROM prices").fetchone()["n"],
             "scans": c.execute("SELECT COUNT(*) AS n FROM scans").fetchone()["n"],
         }
+
+    scan_age = _age_seconds(last_scan["at"] if last_scan else None)
+    price_age_s = _age_seconds(price_age["at"] if price_age else None)
+    components = {
+        "fastapi": {
+            "status": "OK",
+            "evidence": f"handler_latency_ms={api_ms}",
+            "latency_ms": api_ms,
+        },
+        "postgres": {"status": "OK", "evidence": "SELECT 1 succeeded"},
+        "binance": {
+            "status": "OK"
+            if binance.get("status") == "ok"
+            else "ERROR",
+            "evidence": binance,
+            "latency_ms": binance.get("latency_ms"),
+        },
+        "worker": {
+            "status": _status_from_age(scan_age, PERIOD * 1.5, PERIOD * 3),
+            "evidence": {
+                "last_scan_at": serial(last_scan["at"]) if last_scan else None,
+                "age_seconds": scan_age,
+                "cycle_ms": last_scan.get("cycle_ms") if last_scan else None,
+                "markets": last_scan.get("markets") if last_scan else None,
+                "errors": last_scan.get("errors") if last_scan else None,
+                "last_candle_ms": last_scan.get("last_candle_ms") if last_scan else None,
+            },
+        },
+        "market_data": {
+            "status": _status_from_age(price_age_s, PERIOD * 1.5, PERIOD * 3),
+            "evidence": {
+                "prices_max_at": serial(price_age["at"]) if price_age else None,
+                "age_seconds": price_age_s,
+            },
+        },
+        "engine": {
+            "status": "WARNING" if engine and engine["paused"] else "OK",
+            "evidence": serial(engine),
+        },
+    }
     return serial(
         {
             "mode": "PAPER_ONLY",
+            "checked_at": datetime.now(timezone.utc).isoformat(),
+            "components": components,
             "engine": engine,
             "last_scan": last_scan,
             "last_trade_at": last_trade["at"] if last_trade else None,
             "prices_max_at": price_age["at"] if price_age else None,
             "counts": counts,
             "binance_base": BASE,
+            "binance": binance,
             "scan_limit": LIMIT,
             "scan_every_seconds": PERIOD,
+            "failed_requests_24h": failed_reqs,
+            "open_alerts": open_alerts,
+            "recent_errors": events,
             "audit": audit,
+            "ohlcv_cache": ohlcv_mod.cache_stats(),
             "notes": [
-                "CPU/memoria host solo disponibles si el orquestador las expone; no se inventan aquí.",
-                "Binance latency se mide en /api/diagnostics/binance (solo lectura).",
+                "Sin acceso al socket Docker desde el dashboard.",
+                "CPU/RAM host: usar docker stats en el equipo local.",
+                "UNKNOWN/WARNING/ERROR se basan en evidencia temporal.",
             ],
         }
     )
@@ -533,29 +727,7 @@ def system():
 
 @app.get("/api/diagnostics/binance")
 async def diagnostics_binance():
-    started = datetime.now(timezone.utc)
-    try:
-        async with httpx.AsyncClient(
-            timeout=10, headers={"User-Agent": "ResearchPaperBot/0.4-diag"}
-        ) as client:
-            r = await client.get(BASE + "/ping")
-            r.raise_for_status()
-            latency_ms = (datetime.now(timezone.utc) - started).total_seconds() * 1000
-            return {
-                "status": "ok",
-                "http_status": r.status_code,
-                "latency_ms": round(latency_ms, 1),
-                "base": BASE,
-                "checked_at": started.isoformat(),
-            }
-    except Exception as exc:
-        return {
-            "status": "error",
-            "error": type(exc).__name__,
-            "detail": str(exc)[:200],
-            "base": BASE,
-            "checked_at": started.isoformat(),
-        }
+    return await _binance_probe()
 
 
 @app.post("/api/engine/pause")
@@ -566,3 +738,82 @@ def engine_pause(reason: str = "manual_pause"):
 @app.post("/api/engine/resume")
 def engine_resume(reason: str = "manual_resume"):
     return {"mode": "PAPER_ONLY", "engine": set_paused(False, reason)}
+
+
+@app.get("/api/candles")
+async def candles(
+    symbol: str = Query(..., min_length=5, max_length=20),
+    interval: str = Query("1h"),
+    limit: int = Query(300, ge=10, le=1000),
+    indicators_flag: bool = Query(True, alias="indicators"),
+):
+    try:
+        async with httpx.AsyncClient(
+            timeout=25, headers={"User-Agent": "ResearchPaperBot/0.5"}
+        ) as client:
+            payload = await ohlcv_mod.fetch_klines(client, symbol, interval, limit)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+
+    with db() as c:
+        markers = list(
+            c.execute(
+                """SELECT id, at, side, qty, price, candle_ms, strategy, reason
+                   FROM trades WHERE symbol=%s ORDER BY id""",
+                (payload["symbol"],),
+            )
+        )
+    payload["trade_markers"] = serial(markers)
+
+    if indicators_flag:
+        cs = payload["candles"]
+        # Indicators use all candles for display; trading path still uses closed-only.
+        opens = [x["open"] for x in cs]
+        highs = [x["high"] for x in cs]
+        lows = [x["low"] for x in cs]
+        closes = [x["close"] for x in cs]
+        payload["indicators"] = indicators.compute_bundle(opens, highs, lows, closes)
+    return payload
+
+
+@app.get("/api/risk")
+def risk_endpoint():
+    return _load_risk_report()
+
+
+@app.get("/api/alerts")
+def alerts_list(status: str | None = None, limit: int = 100):
+    limit = max(1, min(500, limit))
+    with db() as c:
+        if status:
+            rows = list(
+                c.execute(
+                    "SELECT * FROM alerts WHERE status=%s ORDER BY updated_at DESC LIMIT %s",
+                    (status.upper(), limit),
+                )
+            )
+        else:
+            rows = alerts_mod.list_alerts(c.execute, limit)
+    return serial(rows)
+
+
+@app.post("/api/alerts/{alert_id}/ack")
+def alerts_ack(alert_id: int):
+    with db() as c:
+        row = alerts_mod.ack_alert(c.execute, alert_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="alert not found")
+    return serial(row)
+
+
+@app.post("/api/alerts/evaluate")
+async def alerts_evaluate():
+    await _refresh_alerts_safe()
+    with db() as c:
+        open_n = c.execute(
+            "SELECT COUNT(*) AS n FROM alerts WHERE status='OPEN'"
+        ).fetchone()["n"]
+        rows = alerts_mod.list_alerts(c.execute, 50)
+    return serial({"open": open_n, "alerts": rows})

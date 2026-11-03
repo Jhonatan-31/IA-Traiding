@@ -60,8 +60,36 @@ docker compose exec -T db pg_dump -U paper -d paper --no-owner --no-acl > backup
 | POST | `/api/engine/pause` | Pausar simulación |
 | POST | `/api/engine/resume` | Reanudar |
 
+## Etapa D (actual)
+
+- Gráficas OHLCV (Lightweight Charts) + indicadores server-side
+- System Health con estados OK/WARNING/ERROR/UNKNOWN
+- Riesgo avanzado + pausa/reanudación
+- Alertas internas persistentes (anti-duplicado)
+- Tests: `docker compose run --rm --no-deps --entrypoint pytest api -q`
+
+### Endpoints nuevos Etapa D
+
+| Método | Ruta | Uso |
+|--------|------|-----|
+| GET | `/api/candles` | OHLCV + indicadores + markers |
+| GET | `/api/risk` | Métricas de riesgo paper |
+| GET | `/api/alerts` | Listado de alertas |
+| POST | `/api/alerts/evaluate` | Reevaluar alertas (solo lectura de mercado) |
+| POST | `/api/alerts/{id}/ack` | Acusar alerta |
+
+### Rollback
+
+```powershell
+git checkout checkpoint-pre-etapa-d
+docker compose up -d --build
+# DB: no usar down -v. Restaurar SQL solo si hace falta:
+# Get-Content backups\paper_backup_pre_etapa_d_*.sql | docker compose exec -T db psql -U paper -d paper
+```
+
 ## Limitaciones actuales
 
-- Gráficas OHLCV, IA entrenada, backtesting completo y alertas externas: pendientes.
+- Paneles RSI/MACD como subgráficos dedicados: pendiente (valores numéricos sí).
+- IA entrenada y backtesting completo: Etapa E/F.
 - Métricas ausentes se muestran como **Sin datos** (no se inventan).
 - Otros contenedores Docker del host no pertenecen a este proyecto y no deben tocarse.
