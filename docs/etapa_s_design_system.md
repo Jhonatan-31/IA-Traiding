@@ -57,8 +57,25 @@ docker compose up -d --build
 # restaurar dump si hace falta
 ```
 
-## Estado S1–S2
+## Estado
 
-Completado: tokens, shell, Inicio ejecutivo, Bot Demo premium, onboarding, confirmación DETENER, posiciones básicas, títulos humanizados en páginas secundarias.
+**Completado S1–S4 (parcial S5):**
+- Tokens, shell, diccionario de etiquetas
+- Inicio ejecutivo + Bot Demo premium (onboarding, confirmación DETENER)
+- Mercado: textos humanos; latencias solo en «Diagnóstico»
+- Movimientos/posiciones humanizados
+- Resultados y Seguridad con lenguaje financiero claro
+- Análisis IA sin «Shadow» en títulos públicos
 
-Pendiente S3–S5: terminal de mercado premium, movimientos tipo tarjeta, resultados profundos, pulido responsive/a11y integral.
+**Pendiente S5:**
+- Layout terminal más denso tipo TradingView
+- A11y/focus audit completo
+- Más capturas desktop ancho + comparación before/after
+- Health page con EmptyState/LoadingState unificados
+
+## Commits / tags
+
+- `checkpoint-etapa-s-pre-20261104_092740` (antes de S)
+- `checkpoint-etapa-s-s1s2-20261104`
+- `checkpoint-etapa-s-s4-20261104`
+- Backup: `backups/paper_pre_etapa_s_20261104_092740.dump`
