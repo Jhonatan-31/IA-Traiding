@@ -1,9 +1,26 @@
 import { useEffect, useState } from "react";
-import { api, fmtNum, fmtPct, type Overview, type RiskReport } from "../api";
+import { api, type Overview, type RiskReport } from "../api";
+import { EmptyState } from "../components/ui/EmptyState";
+import { MetricCard } from "../components/ui/MetricCard";
+import { PageHeader } from "../components/ui/PageHeader";
+import { StatusBadge } from "../components/ui/StatusBadge";
+import { money, pct } from "../ui/format";
+import { METRIC_HELP } from "../ui/labels";
+
+const CLASS_LABEL: Record<string, string> = {
+  cash: "Saldo disponible (confirmado)",
+  invested_cost: "Importe invertido (confirmado)",
+  equity_estimate: "Valor total (estimado)",
+  unrealized_pnl: "Resultado estimado",
+  realized_pnl: "Resultado realizado",
+  fees_estimated: "Comisiones estimadas",
+  drawdown: "Caída desde el máximo",
+};
 
 export default function RiskPage() {
   const [overview, setOverview] = useState<Overview | null>(null);
   const [risk, setRisk] = useState<RiskReport | null>(null);
+  const [demo, setDemo] = useState<Record<string, unknown> | null>(null);
   const [msg, setMsg] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -13,21 +30,26 @@ export default function RiskPage() {
     setError(null);
     let attempt = 0;
     while (attempt < 3) {
-      const [oRes, rRes] = await Promise.allSettled([api.overview(), api.risk()]);
+      const [oRes, rRes, dRes] = await Promise.allSettled([
+        api.overview(),
+        api.risk(),
+        api.demoStatus(),
+      ]);
       if (oRes.status === "fulfilled") setOverview(oRes.value);
       if (rRes.status === "fulfilled") setRisk(rRes.value);
+      if (dRes.status === "fulfilled") setDemo(dRes.value);
       if (oRes.status === "fulfilled" || rRes.status === "fulfilled") {
         setLoading(false);
-        if (oRes.status === "rejected") setError(`overview: ${String(oRes.reason)}`);
-        if (rRes.status === "rejected")
-          setError((prev) => `${prev ?? ""} risk: ${String(rRes.reason)}`.trim());
+        if (oRes.status === "rejected" || rRes.status === "rejected") {
+          setError("Parte de la información de seguridad no está disponible ahora.");
+        }
         return;
       }
       attempt += 1;
       await new Promise((r) => setTimeout(r, 400 * 2 ** (attempt - 1)));
     }
     setLoading(false);
-    setError("No se pudo cargar riesgo/overview tras reintentos");
+    setError("No pudimos cargar la información de seguridad. Inténtalo de nuevo.");
   }
 
   useEffect(() => {
@@ -44,154 +66,182 @@ export default function RiskPage() {
     try {
       if (overview.engine?.paused) {
         await api.resume("dashboard_resume");
-        setMsg("Simulación reanudada. Historial intacto.");
+        setMsg("Simulación reanudada. El historial se conserva.");
       } else {
         await api.pause("dashboard_pause");
-        setMsg("Simulación pausada: sin nuevas entradas/salidas.");
+        setMsg("Simulación en pausa voluntaria: no habrá nuevas compras ni ventas del motor principal.");
       }
       await load();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Error");
+    } catch {
+      setError("No se pudo cambiar el estado del motor. Revisa la conexión.");
     } finally {
       setBusy(false);
     }
   }
 
+  const paused = !!overview?.engine?.paused;
+  const demoRunning = String(demo?.bot_status || "") === "RUNNING";
+
   return (
     <div>
-      <div className="page-title">
-        <div>
-          <h2>Seguridad y protección</h2>
-          <p>
-            Protecciones virtuales, límites por operación y estado del motor.
-            Los stops dependen de que el servicio y el equipo estén en marcha.
-          </p>
-        </div>
-        <div className="actions">
-          <button className="btn" onClick={() => void load()}>
-            Actualizar
-          </button>
-          <button
-            className={`btn ${overview?.engine?.paused ? "primary" : "danger"}`}
-            disabled={busy || !overview}
-            onClick={() => void toggle()}
-          >
-            {overview?.engine?.paused ? "REANUDAR SIMULACIÓN" : "PAUSAR SIMULACIÓN"}
-          </button>
-        </div>
-      </div>
+      <PageHeader
+        title="Seguridad y protección"
+        subtitle="Protecciones virtuales, límites y estado del motor. Los stops dependen de que el servicio y el equipo estén en marcha."
+        actions={
+          <div className="actions">
+            <button className="btn" onClick={() => void load()}>
+              Actualizar
+            </button>
+            <button
+              className={`btn ${paused ? "btn-primary" : "btn-danger"}`}
+              disabled={busy || !overview}
+              onClick={() => void toggle()}
+            >
+              {paused ? "Reanudar simulación" : "Pausar simulación"}
+            </button>
+          </div>
+        }
+      />
+
       {error && <div className="error-box">{error}</div>}
-      {loading && !risk && <p className="muted">Cargando métricas de riesgo…</p>}
-      {msg && (
-        <div className="card" style={{ marginBottom: 14, borderColor: "#2dd4bf" }}>
-          {msg}
-        </div>
-      )}
+      {msg && <div className="success-box">{msg}</div>}
+      {loading && !risk && <p className="loading-block">Cargando protecciones…</p>}
 
-      <div className="grid stats" style={{ marginBottom: 14 }}>
-        <div className="card">
-          <div className="stat-label">Efectivo (ledger)</div>
-          <div className="stat-value">{fmtNum(risk?.cash, 2)} USDT</div>
-        </div>
-        <div className="card">
-          <div className="stat-label">Exposición total (costo)</div>
-          <div className="stat-value">{fmtNum(risk?.invested_cost, 2)} USDT</div>
-        </div>
-        <div className="card">
-          <div className="stat-label">Patrimonio mark-to-market</div>
-          <div className="stat-value">{fmtNum(risk?.equity_estimate, 4)} USDT</div>
-        </div>
-        <div className="card">
-          <div className="stat-label">P/L realizado (FIFO sim)</div>
-          <div className="stat-value">{fmtNum(risk?.realized_pnl, 4)}</div>
-        </div>
-        <div className="card">
-          <div className="stat-label">P/L no realizado</div>
-          <div className="stat-value">{fmtNum(risk?.unrealized_pnl, 4)}</div>
-        </div>
-        <div className="card">
-          <div className="stat-label">Comisiones estimadas acum.</div>
-          <div className="stat-value">{fmtNum(risk?.fees_estimated, 4)}</div>
-        </div>
-        <div className="card">
-          <div className="stat-label">Drawdown actual</div>
-          <div className="stat-value neg">
-            {risk?.drawdown.current_drawdown_pct == null
-              ? "Sin datos"
-              : fmtPct(risk.drawdown.current_drawdown_pct)}
-          </div>
-        </div>
-        <div className="card">
-          <div className="stat-label">Drawdown máximo</div>
-          <div className="stat-value neg">
-            {risk?.drawdown.max_drawdown_pct == null
-              ? "Sin datos"
-              : fmtPct(risk.drawdown.max_drawdown_pct)}
-          </div>
-        </div>
+      <div className="bot-status-line" style={{ marginBottom: 14 }}>
+        <StatusBadge variant="info">SIMULACIÓN</StatusBadge>
+        <StatusBadge variant={paused ? "warn" : "ok"}>
+          Motor principal · {paused ? "Pausa voluntaria" : "Activo"}
+        </StatusBadge>
+        <StatusBadge variant={demoRunning ? "ok" : "warn"}>
+          Bot Demo · {demoRunning ? "En marcha" : "Detenido"}
+        </StatusBadge>
       </div>
 
-      <div className="grid" style={{ gridTemplateColumns: "1fr 1fr", gap: 14 }}>
-        <div className="card">
-          <h3>Límites configurados</h3>
-          <p>Exposición máx: {risk?.limits.max_exposure_pct ?? "Sin datos"}%</p>
-          <p>Drawdown máx: {risk?.limits.max_drawdown_pct ?? "Sin datos"}%</p>
-          <p>Pérdida diaria máx: {risk?.limits.max_daily_loss_pct ?? "Sin datos"}%</p>
-          <p>Posiciones máx: {risk?.limits.max_positions ?? "Sin datos"}</p>
-          <p>Trades/día máx: {risk?.limits.max_trades_per_day ?? "Sin datos"}</p>
-          <p>Budget/trade: {risk?.limits.per_trade_budget ?? 25} USDT</p>
-          <p>
-            Brechas activas:{" "}
+      <div className="metric-grid">
+        <MetricCard label="Saldo disponible" value={money(risk?.cash)} hint={METRIC_HELP.cash} />
+        <MetricCard label="Importe invertido" value={money(risk?.invested_cost)} />
+        <MetricCard
+          label="Valor total"
+          value={money(risk?.equity_estimate)}
+          hint={METRIC_HELP.equity}
+          tone="brand"
+        />
+        <MetricCard
+          label="Resultado realizado"
+          value={money(risk?.realized_pnl, { signed: true })}
+          hint={METRIC_HELP.realized}
+        />
+        <MetricCard
+          label="Resultado estimado"
+          value={money(risk?.unrealized_pnl, { signed: true })}
+          hint={METRIC_HELP.unrealized}
+        />
+        <MetricCard label="Comisiones" value={money(risk?.fees_estimated)} hint={METRIC_HELP.fees} />
+        <MetricCard
+          label="Caída actual"
+          value={
+            risk?.drawdown.current_drawdown_pct == null
+              ? "—"
+              : pct(risk.drawdown.current_drawdown_pct)
+          }
+          tone="warn"
+          hint={METRIC_HELP.drawdown}
+        />
+        <MetricCard
+          label="Caída máxima"
+          value={
+            risk?.drawdown.max_drawdown_pct == null ? "—" : pct(risk.drawdown.max_drawdown_pct)
+          }
+          tone="warn"
+        />
+      </div>
+
+      <div className="two-col">
+        <div className="panel">
+          <h3 style={{ marginTop: 0, color: "var(--text)" }}>Límites de protección</h3>
+          <div className="pos-row">
+            <span>Exposición máxima</span>
+            <strong>{risk?.limits.max_exposure_pct ?? "—"}%</strong>
+          </div>
+          <div className="pos-row">
+            <span>Caída máxima permitida</span>
+            <strong>{risk?.limits.max_drawdown_pct ?? "—"}%</strong>
+          </div>
+          <div className="pos-row">
+            <span>Pérdida diaria máxima</span>
+            <strong>{risk?.limits.max_daily_loss_pct ?? "—"}%</strong>
+          </div>
+          <div className="pos-row">
+            <span>Posiciones máximas</span>
+            <strong>{risk?.limits.max_positions ?? "—"}</strong>
+          </div>
+          <div className="pos-row">
+            <span>Operaciones por día</span>
+            <strong>{risk?.limits.max_trades_per_day ?? "—"}</strong>
+          </div>
+          <div className="pos-row">
+            <span>Límite por operación</span>
+            <strong>{money(risk?.limits.per_trade_budget ?? 25)}</strong>
+          </div>
+          <p className="muted" style={{ fontSize: 12, marginTop: 12, lineHeight: 1.45 }}>
+            En el Bot Demo, la protección de pérdida típica es cerca de −1% y el objetivo cerca de
+            +2%. No garantizan el precio exacto de ejecución.
+          </p>
+          <p style={{ fontSize: 13, marginTop: 8 }}>
+            Alertas activas:{" "}
             {risk?.breaches?.length ? risk.breaches.join(", ") : "ninguna"}
           </p>
         </div>
-        <div className="card">
-          <h3>Clasificación de datos</h3>
+
+        <div className="panel">
+          <h3 style={{ marginTop: 0, color: "var(--text)" }}>Cómo leer los datos</h3>
           {risk &&
             Object.entries(risk.classification).map(([k, v]) => (
-              <p key={k}>
-                <strong>{k}</strong>: {v}
-              </p>
+              <div className="pos-row" key={k}>
+                <span>{CLASS_LABEL[k] || k}</span>
+                <strong>{v === "confirmed" ? "Confirmado" : v === "estimated" ? "Estimado" : String(v)}</strong>
+              </div>
             ))}
+          <p className="muted" style={{ fontSize: 12, marginTop: 12, lineHeight: 1.45 }}>
+            Una pausa voluntaria no es lo mismo que una desconexión: en pausa tú detienes el motor;
+            si el servicio o el computador se apagan, las protecciones dejan de vigilar el mercado.
+          </p>
         </div>
       </div>
 
-      <div className="card" style={{ marginTop: 14 }}>
-        <h3>Exposición por activo</h3>
-        <div className="table-wrap">
-          <table className="data">
-            <thead>
-              <tr>
-                <th>Símbolo</th>
-                <th>Costo</th>
-                <th>Valor mercado</th>
-                <th>P/L</th>
-                <th>Valoración</th>
-                <th>Fuente precio</th>
-              </tr>
-            </thead>
-            <tbody>
-              {(risk?.exposure_by_asset ?? []).length === 0 ? (
+      <div className="panel" style={{ marginTop: 14 }}>
+        <h3 style={{ marginTop: 0, color: "var(--text)" }}>Exposición por mercado</h3>
+        {(risk?.exposure_by_asset ?? []).length === 0 ? (
+          <EmptyState
+            title="Sin posiciones abiertas"
+            description="Cuando haya compras virtuales, verás aquí el importe invertido y el resultado estimado."
+          />
+        ) : (
+          <div className="table-wrap">
+            <table className="data">
+              <thead>
                 <tr>
-                  <td colSpan={6} className="muted">
-                    Sin posiciones
-                  </td>
+                  <th>Mercado</th>
+                  <th>Importe invertido</th>
+                  <th>Valor de mercado</th>
+                  <th>Resultado estimado</th>
+                  <th>Tipo de dato</th>
                 </tr>
-              ) : (
-                risk!.exposure_by_asset.map((e) => (
+              </thead>
+              <tbody>
+                {risk!.exposure_by_asset.map((e) => (
                   <tr key={e.symbol}>
-                    <td>{e.symbol}</td>
-                    <td>{fmtNum(e.cost, 4)}</td>
-                    <td>{fmtNum(e.market_value, 4)}</td>
-                    <td>{fmtNum(e.unrealized_pnl, 4)}</td>
-                    <td>{e.valuation}</td>
-                    <td>{e.price_source ?? "Sin datos"}</td>
+                    <td>{e.symbol.replace("USDT", "")}</td>
+                    <td className="tabular">{money(e.cost)}</td>
+                    <td className="tabular">{money(e.market_value)}</td>
+                    <td className="tabular">{money(e.unrealized_pnl, { signed: true })}</td>
+                    <td>{e.valuation === "mark" ? "Precio de mercado" : String(e.valuation)}</td>
                   </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );

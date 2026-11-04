@@ -9,7 +9,12 @@ import {
   XAxis,
   YAxis,
 } from "recharts";
-import { api, fmtNum, fmtTime } from "../api";
+import { api } from "../api";
+import { MetricCard } from "../components/ui/MetricCard";
+import { PageHeader } from "../components/ui/PageHeader";
+import { StatusBadge } from "../components/ui/StatusBadge";
+import { money, pct, when } from "../ui/format";
+import { METRIC_HELP, accountLabel, statusLabel } from "../ui/labels";
 
 type ComparePayload = {
   generated_at?: string;
@@ -37,30 +42,36 @@ type ComparePayload = {
   };
 };
 
+function num(v: unknown): number | null {
+  const n = typeof v === "number" ? v : Number(v);
+  return Number.isFinite(n) ? n : null;
+}
+
 export default function PerformancePage() {
   const [data, setData] = useState<ComparePayload | null>(null);
+  const [demo, setDemo] = useState<Record<string, unknown> | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
+  async function load() {
+    setLoading(true);
+    try {
+      const [payload, d] = await Promise.all([
+        api.performanceCompare(),
+        api.demoStatus().catch(() => null),
+      ]);
+      setData(payload);
+      setDemo(d);
+      setError(null);
+    } catch {
+      setError("No pudimos cargar los resultados. Inténtalo de nuevo.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
   useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      setLoading(true);
-      try {
-        const payload = await api.performanceCompare();
-        if (!cancelled) {
-          setData(payload);
-          setError(null);
-        }
-      } catch (e) {
-        if (!cancelled) setError(e instanceof Error ? e.message : "Error");
-      } finally {
-        if (!cancelled) setLoading(false);
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
+    void load();
   }, []);
 
   const sma = data?.ledgers?.sma_paper || {};
@@ -71,330 +82,186 @@ export default function PerformancePage() {
   const gaps = data?.operational_coverage?.downtime_gaps || [];
   const sleep = data?.operational_coverage?.host_sleep_confirmed_utc || {};
   const smaCurve = (data?.equity_curves?.sma_scans || []).map((p) => ({
-    label: fmtTime(p.t),
+    label: when(p.t, { withSeconds: false }),
     sma: p.equity,
   }));
   const labCurve = (data?.equity_curves?.lab_daily || []).flatMap((p) => [
-    { label: `${p.day} start`, lab: p.start_equity },
-    { label: `${p.day} end`, lab: p.end_equity },
+    { label: `${p.day} inicio`, lab: p.start_equity },
+    { label: `${p.day} fin`, lab: p.end_equity },
   ]);
 
   return (
     <div>
-      <div className="page-title">
-        <div>
-          <h2>Resultados</h2>
-          <p>
-            Etapa Q · tres ledgers separados · solo hechos persistidos. Shadow PENDING no
-            inventa PnL. PAPER_ONLY.
-          </p>
-        </div>
-        <button
-          className="btn"
-          onClick={() => {
-            setLoading(true);
-            void api
-              .performanceCompare()
-              .then(setData)
-              .catch((e) => setError(e instanceof Error ? e.message : "Error"))
-              .finally(() => setLoading(false));
-          }}
-        >
-          {loading ? "Cargando…" : "Actualizar"}
-        </button>
-      </div>
+      <PageHeader
+        title="Resultados"
+        subtitle="Rendimiento de cada cuenta por separado. No se mezclan capitales. Las predicciones de IA no cuentan como ganancias."
+        actions={
+          <button className="btn" onClick={() => void load()} disabled={loading}>
+            {loading ? "Cargando…" : "Actualizar"}
+          </button>
+        }
+      />
 
       {error && <div className="error-box">{error}</div>}
-      <p className="muted" style={{ fontSize: 12 }}>
-        Generado: {fmtTime(data?.generated_at)} · {data?.note}
+      <p className="muted" style={{ fontSize: 12, marginBottom: 14 }}>
+        Actualizado: {when(data?.generated_at)} · Solo datos persistidos de simulación
       </p>
 
-      <div
-        style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fit,minmax(280px,1fr))",
-          gap: 12,
-          marginBottom: 14,
-        }}
-      >
-        <div className="card">
-          <h3>SMA paper</h3>
-          <p>Capital inicial: {fmtNum(sma.initial_capital as number | null, 2)}</p>
-          <p>Cash: {fmtNum(sma.cash as number | null, 2)}</p>
-          <p>Invertido: {fmtNum(sma.invested_cost as number | null, 2)}</p>
-          <p>Equity MTM: {fmtNum(sma.equity_estimate as number | null, 2)}</p>
-          <p>Retorno neto: {fmtNum(sma.net_return_vs_initial as number | null, 6)}</p>
-          <p>uPnL: {fmtNum(sma.unrealized_pnl as number | null, 4)}</p>
-          <p>rPnL: {fmtNum(sma.realized_pnl as number | null, 4)}</p>
-          <p>Fees est.: {fmtNum(sma.fees_estimated as number | null, 4)}</p>
-          <p>
-            Max DD: {fmtNum(dd.max_drawdown_pct as number | null, 4)}% · peak{" "}
-            {fmtNum(dd.peak_equity as number | null, 2)}
-          </p>
-          <p>
-            Posiciones: {String(sma.open_positions ?? "—")} · trades{" "}
-            {String(sma.trades_total ?? "—")} (B{String(sma.buys ?? 0)}/S
-            {String(sma.sells ?? 0)})
-          </p>
+      {demo ? (
+        <div className="panel" style={{ marginBottom: 14 }}>
+          <div className="panel-title">
+            <h3>{accountLabel("demo_manual_control")}</h3>
+            <StatusBadge variant={String(demo.bot_status) === "RUNNING" ? "ok" : "warn"}>
+              {String(demo.bot_status) === "RUNNING" ? "En marcha" : "Detenido"}
+            </StatusBadge>
+          </div>
+          <div className="metric-grid" style={{ marginBottom: 0 }}>
+            <MetricCard label="Valor total" value={money(num(demo.equity))} hint={METRIC_HELP.equity} tone="brand" />
+            <MetricCard label="Saldo disponible" value={money(num(demo.cash))} hint={METRIC_HELP.cash} />
+            <MetricCard
+              label="Resultado realizado"
+              value={money(num(demo.realized_pnl), { signed: true })}
+              hint={METRIC_HELP.realized}
+            />
+            <MetricCard
+              label="Resultado estimado"
+              value={money(num(demo.unrealized_pnl), { signed: true })}
+              hint={METRIC_HELP.unrealized}
+            />
+            <MetricCard
+              label="Caída desde el máximo"
+              value={pct(num(demo.drawdown_vs_peak) != null ? Number(demo.drawdown_vs_peak) * 100 : null)}
+              hint={METRIC_HELP.drawdown}
+              tone="warn"
+            />
+          </div>
         </div>
-        <div className="card">
-          <h3>Lab auto</h3>
-          <p>
-            Estado:{" "}
-            <span className="pill info">{String(lab.valuation_status ?? "—")}</span>
-          </p>
-          <p>Capital inicial: {fmtNum(lab.initial_capital as number | null, 2)}</p>
-          <p>Cash: {fmtNum(lab.cash as number | null, 2)}</p>
-          <p>Equity MTM: {fmtNum(lab.equity_estimate as number | null, 2)}</p>
-          <p>Retorno neto: {fmtNum(lab.net_return_vs_initial as number | null, 6)}</p>
-          <p>Realizado: {fmtNum(lab.realized_pnl as number | null, 4)}</p>
-          <p>uPnL: {fmtNum(lab.unrealized_pnl as number | null, 4)}</p>
-          <p>
-            Fees: {fmtNum(lab.fees_accumulated as number | null, 4)} · slip{" "}
-            {fmtNum(lab.slip_total as number | null, 4)}
-          </p>
-          <p>DD vs peak: {fmtNum(lab.drawdown_vs_peak as number | null, 6)}</p>
-          <p>Posiciones abiertas: {String(lab.open_positions ?? "—")}</p>
+      ) : null}
+
+      <div className="metric-grid">
+        <div className="panel">
+          <h3 style={{ marginTop: 0, color: "var(--text)" }}>{accountLabel("sma_paper")}</h3>
+          <p className="muted" style={{ fontSize: 12 }}>Cuenta del motor principal (simulación).</p>
+          <div className="pos-row"><span>Capital inicial</span><strong>{money(num(sma.initial_capital))}</strong></div>
+          <div className="pos-row"><span>Saldo disponible</span><strong>{money(num(sma.cash))}</strong></div>
+          <div className="pos-row"><span>Invertido</span><strong>{money(num(sma.invested_cost))}</strong></div>
+          <div className="pos-row"><span>Valor total</span><strong>{money(num(sma.equity_estimate))}</strong></div>
+          <div className="pos-row"><span>Resultado neto</span><strong>{pct(num(sma.net_return_vs_initial) != null ? Number(sma.net_return_vs_initial) * 100 : null)}</strong></div>
+          <div className="pos-row"><span>Realizado</span><strong>{money(num(sma.realized_pnl), { signed: true })}</strong></div>
+          <div className="pos-row"><span>Estimado</span><strong>{money(num(sma.unrealized_pnl), { signed: true })}</strong></div>
+          <div className="pos-row"><span>Comisiones</span><strong>{money(num(sma.fees_estimated))}</strong></div>
+          <div className="pos-row"><span>Caída máxima</span><strong>{pct(num(dd.max_drawdown_pct))}</strong></div>
+          <div className="pos-row">
+            <span>Operaciones</span>
+            <strong>
+              {String(sma.trades_total ?? "—")} (compras {String(sma.buys ?? 0)} / ventas {String(sma.sells ?? 0)})
+            </strong>
+          </div>
         </div>
-        <div className="card">
-          <h3>Research sim (Shadow)</h3>
-          <p>Cash: {fmtNum(research.cash as number | null, 2)}</p>
+
+        <div className="panel">
+          <h3 style={{ marginTop: 0, color: "var(--text)" }}>{accountLabel("lab_auto")}</h3>
           <p className="muted" style={{ fontSize: 12 }}>
-            {String(research.note || "")}
+            Estado: {String(lab.valuation_status ?? "—")}
           </p>
-          <p>
-            Shadow LIVE: pending {String(shadow.pending ?? "—")} · resolved{" "}
-            {String(shadow.resolved ?? "—")} · invalid {String(shadow.invalid ?? "—")} ·
-            outcomes {String(shadow.outcomes_persisted ?? "—")} · ready_now{" "}
-            {String(shadow.ready_now ?? "—")}
+          <div className="pos-row"><span>Capital inicial</span><strong>{money(num(lab.initial_capital))}</strong></div>
+          <div className="pos-row"><span>Saldo disponible</span><strong>{money(num(lab.cash))}</strong></div>
+          <div className="pos-row"><span>Valor total</span><strong>{money(num(lab.equity_estimate))}</strong></div>
+          <div className="pos-row"><span>Resultado neto</span><strong>{pct(num(lab.net_return_vs_initial) != null ? Number(lab.net_return_vs_initial) * 100 : null)}</strong></div>
+          <div className="pos-row"><span>Realizado</span><strong>{money(num(lab.realized_pnl), { signed: true })}</strong></div>
+          <div className="pos-row"><span>Estimado</span><strong>{money(num(lab.unrealized_pnl), { signed: true })}</strong></div>
+          <div className="pos-row"><span>Comisiones</span><strong>{money(num(lab.fees_accumulated))}</strong></div>
+          <div className="pos-row"><span>Diferencia de ejecución</span><strong>{money(num(lab.slip_total))}</strong></div>
+          <div className="pos-row"><span>Posiciones abiertas</span><strong>{String(lab.open_positions ?? "—")}</strong></div>
+        </div>
+
+        <div className="panel">
+          <h3 style={{ marginTop: 0, color: "var(--text)" }}>Análisis de IA</h3>
+          <p className="muted" style={{ fontSize: 12, lineHeight: 1.45 }}>
+            Predicciones en evaluación — no usan dinero ni generan resultado de cuenta.
           </p>
-          <p>
-            Muestra suficiente:{" "}
-            <span className={shadow.sample_sufficient ? "pill ok" : "pill warn"}>
-              {String(shadow.sample_sufficient ?? false)}
-            </span>
-            {" · "}claim estrategia:{" "}
-            <span className="pill warn">{String(shadow.strategy_claim_allowed ?? false)}</span>
+          <div className="pos-row"><span>Saldo investigación</span><strong>{money(num(research.cash))}</strong></div>
+          <div className="pos-row"><span>En evaluación</span><strong>{String(shadow.pending ?? "—")}</strong></div>
+          <div className="pos-row"><span>Completadas</span><strong>{String(shadow.resolved ?? "—")}</strong></div>
+          <div className="pos-row"><span>No evaluables</span><strong>{String(shadow.invalid ?? "—")}</strong></div>
+          <div className="pos-row">
+            <span>Muestra suficiente</span>
+            <strong>
+              <StatusBadge variant={shadow.sample_sufficient ? "ok" : "warn"}>
+                {shadow.sample_sufficient ? "Sí" : "Aún no"}
+              </StatusBadge>
+            </strong>
+          </div>
+          <p className="muted" style={{ fontSize: 12, marginTop: 10 }}>
+            No se presenta un score interno como probabilidad de ganar.
+            {shadow.strategy_claim_allowed
+              ? " Hay base para comparar estrategias con cautela."
+              : " Todavía no hay base estadística para afirmar una estrategia ganadora."}
           </p>
-          <p className="muted" style={{ fontSize: 12 }}>
-            Primer horizonte listo:{" "}
-            {fmtTime(shadow.earliest_horizon_ready_after_utc as string)}
-            {shadow.pending_reason_summary
-              ? ` · ~${String(
-                  (shadow.pending_reason_summary as Record<string, unknown>)
-                    .seconds_until_first_ready ?? "—"
-                )}s · ${String(
-                  (shadow.pending_reason_summary as Record<string, unknown>).primary ?? ""
-                )}`
-              : ""}
-          </p>
-          <p className="muted" style={{ fontSize: 12 }}>
-            {String(shadow.pnl_note || "")}
-          </p>
-          <p className="muted" style={{ fontSize: 12 }}>
-            Eval predictiva ≠ cartera ejecutable. HOLD ≠ venta.
-          </p>
-          {!((shadow.resolved_predictions as unknown[]) || []).length && (
-            <p className="muted" style={{ fontSize: 12 }}>
-              Predicciones resueltas: ninguna todavía.
-            </p>
-          )}
         </div>
       </div>
 
-      <div className="card" style={{ marginBottom: 14 }}>
-        <h3>Evolución patrimonial (observada)</h3>
-        <p className="muted" style={{ fontSize: 12 }}>
-          {data?.equity_curves?.note}
-        </p>
-        <div style={{ width: "100%", height: 280 }}>
-          <ResponsiveContainer>
-            <LineChart data={smaCurve.length ? smaCurve : labCurve}>
-              <CartesianGrid strokeDasharray="3 3" opacity={0.3} />
-              <XAxis dataKey="label" tick={{ fontSize: 10 }} interval="preserveStartEnd" />
-              <YAxis domain={["auto", "auto"]} tick={{ fontSize: 11 }} width={64} />
-              <Tooltip />
-              <Legend />
-              {smaCurve.length > 0 && (
-                <Line
-                  type="monotone"
-                  dataKey="sma"
-                  name="SMA scans"
-                  stroke="#1f6feb"
-                  dot={false}
-                  strokeWidth={2}
-                />
-              )}
-            </LineChart>
-          </ResponsiveContainer>
+      <div className="panel" style={{ marginTop: 14 }}>
+        <div className="panel-title">
+          <h3>Evolución del patrimonio</h3>
+          {data?.equity_curves?.note ? (
+            <StatusBadge variant="warn">Cobertura limitada</StatusBadge>
+          ) : null}
         </div>
-        {labCurve.length > 0 && (
-          <p className="muted" style={{ fontSize: 12, marginTop: 8 }}>
-            Lab daily:{" "}
-            {labCurve
-              .map((p) => `${p.label}=${fmtNum(p.lab as number | null, 2)}`)
-              .join(" · ")}
-          </p>
+        {data?.equity_curves?.note ? (
+          <p className="muted" style={{ fontSize: 13 }}>{String(data.equity_curves.note)}</p>
+        ) : null}
+        {smaCurve.length < 2 && labCurve.length < 2 ? (
+          <p className="muted">Aún no hay suficientes puntos para dibujar la curva.</p>
+        ) : (
+          <div className="chart-box">
+            <ResponsiveContainer width="100%" height="100%">
+              <LineChart data={[...smaCurve, ...labCurve]}>
+                <CartesianGrid stroke="#273247" strokeDasharray="3 3" />
+                <XAxis dataKey="label" stroke="#9caac0" fontSize={11} />
+                <YAxis stroke="#9caac0" fontSize={11} width={70} domain={["auto", "auto"]} />
+                <Tooltip
+                  contentStyle={{
+                    background: "#111827",
+                    border: "1px solid #273247",
+                    borderRadius: 8,
+                  }}
+                />
+                <Legend />
+                <Line type="monotone" dataKey="sma" name="Cuenta papel" stroke="#4F8CFF" dot={false} connectNulls />
+                <Line type="monotone" dataKey="lab" name="Bot automático" stroke="#17B890" dot={false} connectNulls />
+              </LineChart>
+            </ResponsiveContainer>
+          </div>
         )}
       </div>
 
-      <div className="card" style={{ marginBottom: 14 }}>
-        <h3>Cobertura operativa / suspensión</h3>
-        <p className="muted" style={{ fontSize: 12 }}>
-          {data?.operational_coverage?.policy}
-        </p>
-        <p style={{ fontSize: 13 }}>
-          Host sleep: {String(sleep.sleep || "—")} → wake {String(sleep.wake || "—")} (
-          {String(sleep.source || "")})
-        </p>
-        <div className="table-wrap">
-          <table className="data">
-            <thead>
-              <tr>
-                <th>Tabla</th>
-                <th>Gap s</th>
-                <th>~Ciclos omitidos</th>
-                <th>Reanudó</th>
-              </tr>
-            </thead>
-            <tbody>
-              {gaps.map((g, i) => (
-                <tr key={i}>
-                  <td>{String(g.table)}</td>
-                  <td>{String(g.gap_sec)}</td>
-                  <td>{String(g.approx_cycles_omitted)}</td>
-                  <td>{fmtTime(g.resumed_at as string)}</td>
-                </tr>
-              ))}
-              {!gaps.length && (
-                <tr>
-                  <td colSpan={4} className="muted">
-                    Sin huecos &gt;450s
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
+      {(gaps.length > 0 || Object.keys(sleep).length > 0) && (
+        <div className="panel" style={{ marginTop: 14 }}>
+          <h3 style={{ marginTop: 0, color: "var(--text)" }}>Cobertura operativa</h3>
+          <p className="muted" style={{ fontSize: 13, lineHeight: 1.45 }}>
+            Periodos en los que el equipo o el servicio no estuvieron activos. Esos tramos no
+            deben interpretarse como resultados de mercado.
+          </p>
+          {Object.keys(sleep).length > 0 && (
+            <p className="muted" style={{ fontSize: 12 }}>
+              Sueño del equipo confirmado: {Object.entries(sleep).map(([k, v]) => `${k}=${v}`).join(" · ")}
+            </p>
+          )}
+          {gaps.slice(0, 8).map((g, i) => (
+            <p key={i} className="muted" style={{ fontSize: 12 }}>
+              {String(g.from || g.start || "—")} → {String(g.to || g.end || "—")} ·{" "}
+              {String(g.reason || g.note || "pausa")}
+            </p>
+          ))}
         </div>
-      </div>
+      )}
 
-      <div className="card" style={{ marginBottom: 14 }}>
-        <h3>Lab por símbolo / cierres</h3>
-        <div className="table-wrap">
-          <table className="data">
-            <thead>
-              <tr>
-                <th>Symbol</th>
-                <th>Buys</th>
-                <th>Sells</th>
-                <th>Fees</th>
-                <th>Slip</th>
-                <th>rPnL</th>
-              </tr>
-            </thead>
-            <tbody>
-              {((lab.by_symbol as Array<Record<string, unknown>>) || []).map((r) => (
-                <tr key={String(r.symbol)}>
-                  <td>{String(r.symbol)}</td>
-                  <td>{String(r.buys)}</td>
-                  <td>{String(r.sells)}</td>
-                  <td>{fmtNum(r.fees as number, 4)}</td>
-                  <td>{fmtNum(r.slip as number, 4)}</td>
-                  <td>{fmtNum(r.realized_pnl as number, 4)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <div className="table-wrap" style={{ marginTop: 10 }}>
-          <table className="data">
-            <thead>
-              <tr>
-                <th>Cierre</th>
-                <th>Symbol</th>
-                <th>rPnL</th>
-                <th>Reason</th>
-                <th>Demo/verif?</th>
-              </tr>
-            </thead>
-            <tbody>
-              {((lab.closed_sells as Array<Record<string, unknown>>) || []).map((t) => (
-                <tr key={String(t.id)}>
-                  <td>{fmtTime(t.at as string)}</td>
-                  <td>{String(t.symbol)}</td>
-                  <td>{fmtNum(t.realized_pnl as number, 4)}</td>
-                  <td>{String(t.reason)}</td>
-                  <td>{String(t.is_verification_or_demo)}</td>
-                </tr>
-              ))}
-              {!((lab.closed_sells as unknown[]) || []).length && (
-                <tr>
-                  <td colSpan={5} className="muted">
-                    Sin ventas cerradas
-                  </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      <div className="card" style={{ marginBottom: 14 }}>
-        <h3>Posiciones Lab</h3>
-        <div className="table-wrap">
-          <table className="data">
-            <thead>
-              <tr>
-                <th>Symbol</th>
-                <th>Qty</th>
-                <th>Cost</th>
-                <th>Entry</th>
-              </tr>
-            </thead>
-            <tbody>
-              {((lab.positions as Array<Record<string, unknown>>) || []).map((p) => (
-                <tr key={String(p.symbol)}>
-                  <td>{String(p.symbol)}</td>
-                  <td>{fmtNum(p.qty as number, 6)}</td>
-                  <td>{fmtNum(p.cost as number, 2)}</td>
-                  <td>{fmtNum(p.entry_price as number, 4)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      <div className="card">
-        <h3>Posiciones SMA paper</h3>
-        <div className="table-wrap">
-          <table className="data">
-            <thead>
-              <tr>
-                <th>Symbol</th>
-                <th>Qty</th>
-                <th>Cost</th>
-              </tr>
-            </thead>
-            <tbody>
-              {((sma.positions as Array<Record<string, unknown>>) || []).map((p) => (
-                <tr key={String(p.symbol)}>
-                  <td>{String(p.symbol)}</td>
-                  <td>{fmtNum(p.qty as number, 6)}</td>
-                  <td>{fmtNum(p.cost as number, 2)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-        <p className="muted" style={{ fontSize: 12, marginTop: 8 }}>
-          Integridad: ledgers separados=
-          {String(data?.integrity?.ledgers_separated)} · paper_only=
-          {String(data?.integrity?.paper_only)} · shadow_executing=
-          {String(data?.integrity?.shadow_executing)} · paper_ai_disabled=
-          {String(data?.integrity?.paper_ai_disabled)}
+      {data?.integrity ? (
+        <p className="muted" style={{ fontSize: 11, marginTop: 12 }}>
+          Integridad de datos: {statusLabel(String(data.integrity.status || "OK"))}
         </p>
-      </div>
+      ) : null}
     </div>
   );
 }

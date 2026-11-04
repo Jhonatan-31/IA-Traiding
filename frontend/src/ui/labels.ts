@@ -117,4 +117,5 @@ export const METRIC_HELP = {
   signal: "El bot vio una posible oportunidad; no siempre significa que compró o vendió.",
   filled: "Una compra o venta virtual que sí se realizó en la cuenta de simulación.",
   paper: "Todo es simulación. No se usa dinero real ni se envían órdenes a Binance.",
+  fees: "Comisiones cobradas o estimadas en la simulación.",
 } as const;
