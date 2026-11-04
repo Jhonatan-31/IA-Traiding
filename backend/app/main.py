@@ -27,6 +27,7 @@ from .prospect.schema import ensure_prospect_schema
 from .prospect_api import router as prospect_router
 from .express.api import router as express_router
 from .demo.api import router as demo_router
+from .active.api import router as active_router
 
 DATABASE_URL = os.environ["DATABASE_URL"]
 BASE = "https://data-api.binance.vision/api/v3"
@@ -528,6 +529,7 @@ app.include_router(prospect_router)
 app.include_router(lab_router)
 app.include_router(express_router)
 app.include_router(demo_router)
+app.include_router(active_router)
 
 
 def serial(rows):

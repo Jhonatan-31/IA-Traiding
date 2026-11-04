@@ -103,6 +103,17 @@ services:
     depends_on:
       db:
         condition: service_healthy
+  active-runner:
+    build: ./backend
+    command: ["python", "-m", "app.active.runner"]
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://paper:${DB_PASSWORD:?Set DB_PASSWORD}@db:5432/paper
+      ACTIVE_EVERY_SECONDS: ${ACTIVE_EVERY_SECONDS:-60}
+      TZ: UTC
+    depends_on:
+      db:
+        condition: service_healthy
   ml-train:
     build: ./backend
     profiles: ["ml"]

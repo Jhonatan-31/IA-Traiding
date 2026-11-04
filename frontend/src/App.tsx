@@ -41,6 +41,7 @@ export default function App() {
           <Route path="/sistema" element={<HealthPage />} />
           <Route path="/configuracion" element={<ConfigPage />} />
           <Route path="/demo" element={<DemoAutoPage />} />
+          <Route path="/estrategias" element={<StrategiesPage />} />
 
           {/* Compatibilidad con rutas anteriores */}
           <Route path="/charts" element={<Navigate to="/mercado" replace />} />
@@ -49,9 +50,9 @@ export default function App() {
           <Route path="/ai" element={<Navigate to="/analisis-ia" replace />} />
           <Route path="/risk" element={<Navigate to="/seguridad" replace />} />
           <Route path="/health" element={<Navigate to="/sistema" replace />} />
+          <Route path="/strategies" element={<Navigate to="/estrategias" replace />} />
 
           <Route path="/markets" element={<MarketsPage />} />
-          <Route path="/strategies" element={<StrategiesPage />} />
           <Route path="/prospect" element={<ProspectPage />} />
           <Route path="/auto-trade" element={<AutoTradePage />} />
           <Route path="/express" element={<ExpressPage />} />

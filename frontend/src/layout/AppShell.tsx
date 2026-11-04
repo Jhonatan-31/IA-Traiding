@@ -10,6 +10,7 @@ const PRIMARY: NavItem[] = [
   { to: "/", label: "Inicio", icon: "◈", end: true },
   { to: "/mercado", label: "Mercado en vivo", icon: "▣" },
   { to: "/demo", label: "Bot Demo", icon: "▶" },
+  { to: "/estrategias", label: "Estrategias", icon: "⬡︎" },
   { to: "/movimientos", label: "Movimientos", icon: "⇄" },
   { to: "/posiciones", label: "Mis posiciones", icon: "◎" },
   { to: "/resultados", label: "Resultados", icon: "▦" },
@@ -28,6 +29,8 @@ const TITLE: Record<string, string> = {
   "/charts": "Mercado en vivo",
   "/markets": "Mercados",
   "/demo": "Bot Demo",
+  "/estrategias": "Estrategias de Trading",
+  "/strategies": "Estrategias de Trading",
   "/movimientos": "Movimientos",
   "/trades": "Movimientos",
   "/posiciones": "Mis posiciones",
@@ -43,7 +46,6 @@ const TITLE: Record<string, string> = {
   "/auto-trade": "Bot Automático",
   "/express": "Prueba Express",
   "/prospect": "Análisis prospectivo",
-  "/strategies": "Estrategias",
 };
 
 export function AppShell(props: { children: ReactNode }) {

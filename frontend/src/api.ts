@@ -489,6 +489,28 @@ export const api = {
     getJson<{ markers: Array<Record<string, unknown>>; ledger: string }>(
       `/api/demo/markers?symbol=${encodeURIComponent(symbol)}`
     ),
+  activeStrategies: () =>
+    getJson<{ paper_only: boolean; strategies: Array<Record<string, unknown>> }>(
+      "/api/active/strategies"
+    ),
+  activeBStatus: () => getJson<Record<string, unknown>>("/api/active/b/status"),
+  activeBStart: async (token: string) => {
+    const res = await fetch("/api/active/b/start", {
+      method: "POST",
+      headers: { "X-Lab-Token": token },
+    });
+    if (!res.ok) throw new Error(`active B start → HTTP ${res.status}`);
+    return res.json() as Promise<Record<string, unknown>>;
+  },
+  activeBStop: async (token: string) => {
+    const res = await fetch("/api/active/b/stop", {
+      method: "POST",
+      headers: { "X-Lab-Token": token },
+    });
+    if (!res.ok) throw new Error(`active B stop → HTTP ${res.status}`);
+    return res.json() as Promise<Record<string, unknown>>;
+  },
+  activeCStatus: () => getJson<Record<string, unknown>>("/api/active/c/status"),
   labStatus: () => getJson<Record<string, unknown>>("/api/lab/status"),
   labPause: async (token: string, reason = "dashboard_pause") => {
     const res = await fetch(`/api/lab/pause?reason=${encodeURIComponent(reason)}`, {
