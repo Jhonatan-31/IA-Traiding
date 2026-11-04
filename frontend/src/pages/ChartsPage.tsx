@@ -95,6 +95,7 @@ export default function ChartsPage() {
   const [liveFollow, setLiveFollow] = useState(true);
   const [lastEventMs, setLastEventMs] = useState<number | null>(null);
   const [msgCount, setMsgCount] = useState(0);
+  const [showDiag, setShowDiag] = useState(false);
   const [latUi, setLatUi] = useState<{
     binanceHub: number | null;
     hubInternal: number | null;
@@ -497,10 +498,10 @@ export default function ChartsPage() {
     <div ref={wrapRef} style={{ background: "#0b1018", minHeight: "100%" }}>
       <div className="page-title">
         <div>
-          <h2>Terminal de gráficas</h2>
+          <h2>Mercado en vivo</h2>
           <p>
-            Lightweight Charts v4 · REST historial + WS market-stream. Predicciones Shadow ≠
-            ejecuciones. PAPER_ONLY.
+            Precios en tiempo real de Binance Spot. Las flechas marcan operaciones virtuales;
+            las predicciones de IA no son compras ni ventas.
           </p>
         </div>
         <div className="actions">
@@ -555,15 +556,23 @@ export default function ChartsPage() {
               {iv}
             </button>
           ))}
-          <span className={`pill ${connPill}`}>{conn}</span>
+          <span className={`pill ${connPill}`}>
+            {conn === "CONNECTED"
+              ? "Conectado"
+              : conn === "RECONNECTING"
+                ? "Reconectando"
+                : conn === "STALE"
+                  ? "Datos atrasados"
+                  : "Desconectado"}
+          </span>
           <span className="pill info">
-            {symbol} · {interval}
+            {symbol.replace("USDT", "")} · {interval}
           </span>
           <span
             className={`pill ${liveCandle && !liveCandle.is_closed ? "ok" : "info"}`}
-            title="Actualización por trade stream"
+            title="Actualización en tiempo real"
           >
-            LIVE
+            En vivo
           </span>
           <span className="pill info">
             Precio:{" "}
@@ -582,7 +591,17 @@ export default function ChartsPage() {
               {lastPrice == null ? "—" : fmtNum(lastPrice, 4)}
             </span>
           </span>
-          <span className="muted" style={{ fontSize: 12 }}>
+          <button
+            type="button"
+            className="btn"
+            style={{ fontSize: 12, padding: "4px 10px" }}
+            onClick={() => setShowDiag((v) => !v)}
+          >
+            {showDiag ? "Ocultar diagnóstico" : "Diagnóstico"}
+          </button>
+        </div>
+        {showDiag ? (
+          <p className="muted" style={{ fontSize: 12, marginTop: 10 }}>
             ticks: {msgCount}
             {latUi.tradeTime
               ? ` · trade ${new Date(latUi.tradeTime).toISOString()}`
@@ -611,18 +630,18 @@ export default function ChartsPage() {
             {loadingOlder ? " · cargando historial…" : ""}
             {historyEnd ? " · fin historial" : ""}
             {` · bars ${candles.length}`}
-          </span>
-        </div>
+          </p>
+        ) : null}
       </div>
 
       <div className="card" style={{ marginBottom: 12 }}>
-        <h3>Marcadores por ledger</h3>
+        <h3>Qué mostrar en el gráfico</h3>
         <div className="actions">
           {(
             [
-              ["sma", "SMA ejecuciones"],
-              ["lab", "Lab ejecuciones"],
-              ["shadow", "Shadow predicciones"],
+              ["sma", "Operaciones cuenta papel"],
+              ["lab", "Operaciones bot automático"],
+              ["shadow", "Predicciones de IA"],
             ] as const
           ).map(([k, label]) => (
             <button
@@ -637,7 +656,8 @@ export default function ChartsPage() {
           ))}
         </div>
         <p className="muted" style={{ fontSize: 12, marginTop: 8 }}>
-          Círculos morados = predicción Shadow (no fill). Flechas = ejecuciones paper.
+          Círculos = predicción de IA (no es una operación). Flechas = compra o venta virtual
+          ejecutada.
         </p>
       </div>
 

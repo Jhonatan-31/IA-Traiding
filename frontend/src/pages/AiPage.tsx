@@ -6,7 +6,7 @@ const STATE_LABEL: Record<string, string> = {
   trained: "Entrenado",
   validation_insufficient: "Validación insuficiente",
   validated_research: "Validado para investigación",
-  shadow_ai_active: "Shadow AI activo",
+  shadow_ai_active: "Análisis IA activo",
   model_degraded: "Modelo degradado",
   model_disabled: "Modelo deshabilitado",
 };
@@ -68,10 +68,10 @@ export default function AiPage() {
     setMsg(null);
     try {
       const r = await api.mlShadowRun(12);
-      setMsg(`Shadow live: ${r.generated} predicciones. Sin órdenes.`);
+      setMsg(`Análisis IA: ${r.generated} predicciones registradas. Sin dinero ni órdenes.`);
       await load();
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Error shadow");
+      setError(e instanceof Error ? e.message : "No se pudo ejecutar el análisis");
     } finally {
       setBusy(false);
     }
@@ -144,10 +144,11 @@ export default function AiPage() {
     <div>
       <div className="page-title">
         <div>
-          <h2>Inteligencia artificial</h2>
+          <h2>Análisis de Inteligencia Artificial</h2>
           <p>
-            Investigación cuantitativa. Shadow AI registra señales; no opera ni
-            siquiera en paper. PAPER_AI no autorizado.
+            La inteligencia artificial estudia el mercado y registra sus predicciones
+            para comprobar qué tan acertadas son. Por ahora no utiliza dinero ni
+            ejecuta operaciones.
           </p>
         </div>
         <div className="actions">
@@ -155,20 +156,20 @@ export default function AiPage() {
             Actualizar
           </button>
           <button className="btn" onClick={() => void runResolve()} disabled={busy}>
-            Resolver horizonte
+            Completar evaluaciones
           </button>
           <button className="btn" onClick={() => void runReplay()} disabled={busy}>
-            Replay histórico
+            Repetir análisis histórico
           </button>
           <button className="btn" onClick={() => void evalBreaker()} disabled={busy}>
-            Evaluar breaker
+            Revisar protección automática
           </button>
           <button
             className="btn primary"
             disabled={busy || state === "untrained"}
             onClick={() => void runShadow()}
           >
-            {busy ? "Ejecutando…" : "Correr Shadow AI"}
+            {busy ? "Ejecutando…" : "Registrar predicciones"}
           </button>
         </div>
       </div>
@@ -396,7 +397,7 @@ export default function AiPage() {
       </div>
 
       <div className="card" style={{ marginTop: 14 }}>
-        <h3>Predicciones Shadow resueltas</h3>
+        <h3>Predicciones completadas</h3>
         <div className="table-wrap">
           <table className="data">
             <thead>

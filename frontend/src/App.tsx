@@ -1,5 +1,6 @@
 import { Suspense, lazy } from "react";
-import { NavLink, Route, Routes } from "react-router-dom";
+import { Navigate, Route, Routes } from "react-router-dom";
+import { AppShell } from "./layout/AppShell";
 
 const OverviewPage = lazy(() => import("./pages/OverviewPage"));
 const MarketsPage = lazy(() => import("./pages/MarketsPage"));
@@ -14,79 +15,48 @@ const AutoTradePage = lazy(() => import("./pages/AutoTradePage"));
 const PerformancePage = lazy(() => import("./pages/PerformancePage"));
 const ExpressPage = lazy(() => import("./pages/ExpressPage"));
 const DemoAutoPage = lazy(() => import("./pages/DemoAutoPage"));
-
-const links = [
-  { to: "/", label: "Resumen" },
-  { to: "/markets", label: "Mercados" },
-  { to: "/charts", label: "Gráficas" },
-  { to: "/trades", label: "Operaciones" },
-  { to: "/strategies", label: "Estrategias" },
-  { to: "/ai", label: "Inteligencia artificial" },
-  { to: "/prospect", label: "Prospectivo" },
-  { to: "/auto-trade", label: "Trading Automático" },
-  { to: "/demo", label: "Trading Automático DEMO" },
-  { to: "/performance", label: "Rendimiento" },
-  { to: "/express", label: "Express Test" },
-  { to: "/risk", label: "Gestión de riesgo" },
-  { to: "/health", label: "System Health" },
-];
+const PositionsPage = lazy(() => import("./pages/PositionsPage"));
+const ConfigPage = lazy(() => import("./pages/ConfigPage"));
 
 function PageLoader() {
   return (
-    <div>
-      <p className="muted">Cargando módulo…</p>
-      <p className="muted" style={{ fontSize: 12 }}>
-        Si permanece más de unos segundos tras recrear el dashboard, recargue la
-        página (Ctrl+F5).
-      </p>
+    <div className="loading-block">
+      <p className="muted">Cargando…</p>
     </div>
   );
 }
 
 export default function App() {
   return (
-    <div className="app-shell">
-      <aside className="sidebar">
-        <div className="brand">
-          <h1>AI Trading Bot Pro</h1>
-          <p>PAPER ONLY · Binance Spot</p>
-        </div>
-        <nav className="nav">
-          {links.map((l) => (
-            <NavLink
-              key={l.to}
-              to={l.to}
-              end={l.to === "/"}
-              className={({ isActive }) => (isActive ? "active" : undefined)}
-            >
-              {l.label}
-            </NavLink>
-          ))}
-        </nav>
-        <div className="sidebar-foot">
-          Simulación virtual. Sin claves privadas ni órdenes reales. No garantiza
-          ganancias.
-        </div>
-      </aside>
-      <main className="content">
-        <Suspense fallback={<PageLoader />}>
-          <Routes>
-            <Route path="/" element={<OverviewPage />} />
-            <Route path="/markets" element={<MarketsPage />} />
-            <Route path="/charts" element={<ChartsPage />} />
-            <Route path="/trades" element={<TradesPage />} />
-            <Route path="/strategies" element={<StrategiesPage />} />
-            <Route path="/ai" element={<AiPage />} />
-            <Route path="/prospect" element={<ProspectPage />} />
-            <Route path="/auto-trade" element={<AutoTradePage />} />
-            <Route path="/demo" element={<DemoAutoPage />} />
-            <Route path="/performance" element={<PerformancePage />} />
-            <Route path="/express" element={<ExpressPage />} />
-            <Route path="/risk" element={<RiskPage />} />
-            <Route path="/health" element={<HealthPage />} />
-          </Routes>
-        </Suspense>
-      </main>
-    </div>
+    <AppShell>
+      <Suspense fallback={<PageLoader />}>
+        <Routes>
+          <Route path="/" element={<OverviewPage />} />
+          <Route path="/mercado" element={<ChartsPage />} />
+          <Route path="/movimientos" element={<TradesPage />} />
+          <Route path="/posiciones" element={<PositionsPage />} />
+          <Route path="/resultados" element={<PerformancePage />} />
+          <Route path="/analisis-ia" element={<AiPage />} />
+          <Route path="/seguridad" element={<RiskPage />} />
+          <Route path="/sistema" element={<HealthPage />} />
+          <Route path="/configuracion" element={<ConfigPage />} />
+          <Route path="/demo" element={<DemoAutoPage />} />
+
+          {/* Compatibilidad con rutas anteriores */}
+          <Route path="/charts" element={<Navigate to="/mercado" replace />} />
+          <Route path="/trades" element={<Navigate to="/movimientos" replace />} />
+          <Route path="/performance" element={<Navigate to="/resultados" replace />} />
+          <Route path="/ai" element={<Navigate to="/analisis-ia" replace />} />
+          <Route path="/risk" element={<Navigate to="/seguridad" replace />} />
+          <Route path="/health" element={<Navigate to="/sistema" replace />} />
+
+          <Route path="/markets" element={<MarketsPage />} />
+          <Route path="/strategies" element={<StrategiesPage />} />
+          <Route path="/prospect" element={<ProspectPage />} />
+          <Route path="/auto-trade" element={<AutoTradePage />} />
+          <Route path="/express" element={<ExpressPage />} />
+        </Routes>
+      </Suspense>
+    </AppShell>
   );
 }

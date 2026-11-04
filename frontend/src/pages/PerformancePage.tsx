@@ -83,7 +83,7 @@ export default function PerformancePage() {
     <div>
       <div className="page-title">
         <div>
-          <h2>Rendimiento y comparación</h2>
+          <h2>Resultados</h2>
           <p>
             Etapa Q · tres ledgers separados · solo hechos persistidos. Shadow PENDING no
             inventa PnL. PAPER_ONLY.

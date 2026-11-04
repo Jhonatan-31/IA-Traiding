@@ -69,7 +69,7 @@ export default function HealthPage() {
     <div>
       <div className="page-title">
         <div>
-          <h2>System Health</h2>
+          <h2>Estado del sistema</h2>
           <p>
             Estados basados en evidencia reciente. Sin acceso al socket Docker.
           </p>
@@ -79,7 +79,7 @@ export default function HealthPage() {
         </button>
       </div>
       {error && <div className="error-box">{error}</div>}
-      {loading && !system && <p className="muted">Cargando System Health…</p>}
+      {loading && !system && <p className="muted">Cargando estado del sistema…</p>}
 
       <div className="grid stats" style={{ marginBottom: 16 }}>
         {Object.entries(comps).map(([name, c]) => (

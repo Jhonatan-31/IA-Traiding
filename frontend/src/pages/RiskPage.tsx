@@ -61,10 +61,10 @@ export default function RiskPage() {
     <div>
       <div className="page-title">
         <div>
-          <h2>Gestión de riesgo</h2>
+          <h2>Seguridad y protección</h2>
           <p>
-            Separación explícita: ledger confirmado vs marcas observadas vs
-            estimaciones de simulación.
+            Protecciones virtuales, límites por operación y estado del motor.
+            Los stops dependen de que el servicio y el equipo estén en marcha.
           </p>
         </div>
         <div className="actions">
