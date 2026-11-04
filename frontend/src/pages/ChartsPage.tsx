@@ -153,7 +153,29 @@ export default function ChartsPage() {
 
   const applyPayload = useCallback(
     (payload: CandleResponse, mode: "replace" | "prepend" | "append") => {
-      setMarkers((payload.markers || payload.trade_markers || []) as ChartMarker[]);
+      const base = (payload.markers || payload.trade_markers || []) as ChartMarker[];
+      setMarkers(base);
+      // Merge DEMO ledger fills as ChartMarker (isolated ledger tag)
+      void api
+        .demoMarkers(symbol)
+        .then((dm) => {
+          const extra: ChartMarker[] = (dm.markers || []).map((m, i) => ({
+            id: Number(m.id ?? 900000 + i),
+            at: (m.at as string) || null,
+            side: String(m.side || ""),
+            qty: (m.qty as number) ?? null,
+            price: (m.price as number) ?? null,
+            candle_ms: m.time != null ? Number(m.time) * 1000 : 0,
+            strategy: "demo_manual_control",
+            reason: (m.reason as string) || null,
+            ledger: "demo_manual_control",
+            kind: "demo_fill",
+            source: "demo",
+            label: String(m.text || m.side || "DEMO"),
+          }));
+          if (extra.length) setMarkers((prev) => [...prev, ...extra]);
+        })
+        .catch(() => undefined);
       setOverlays((payload.position_overlays || []) as ChartPositionOverlay[]);
       setIndicators(payload.indicators);
       setIndicatorsMeta(payload.indicators_meta);
@@ -171,7 +193,7 @@ export default function ChartsPage() {
         setHistoryEnd(true);
       }
     },
-    [resetKey]
+    [resetKey, symbol]
   );
 
   const loadHistory = useCallback(async () => {

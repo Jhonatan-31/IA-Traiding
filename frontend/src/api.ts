@@ -453,6 +453,42 @@ export const api = {
       still_pending: number;
     }>;
   },
+  performanceCompare: () =>
+    getJson<Record<string, unknown>>("/api/performance/compare"),
+  expressStatus: () => getJson<Record<string, unknown>>("/api/express/status"),
+  expressReport: () => getJson<Record<string, unknown>>("/api/express/report"),
+  demoStatus: () => getJson<Record<string, unknown>>("/api/demo/status"),
+  demoStart: async (token: string) => {
+    const res = await fetch("/api/demo/start", {
+      method: "POST",
+      headers: { "X-Lab-Token": token },
+    });
+    if (!res.ok) throw new Error(`demo start → HTTP ${res.status}`);
+    return res.json() as Promise<Record<string, unknown>>;
+  },
+  demoStop: async (token: string) => {
+    const res = await fetch("/api/demo/stop", {
+      method: "POST",
+      headers: { "X-Lab-Token": token },
+    });
+    if (!res.ok) throw new Error(`demo stop → HTTP ${res.status}`);
+    return res.json() as Promise<Record<string, unknown>>;
+  },
+  demoDecisions: (limit = 100, symbol?: string, action?: string) => {
+    const q = new URLSearchParams({ limit: String(limit) });
+    if (symbol) q.set("symbol", symbol);
+    if (action) q.set("action", action);
+    return getJson<Array<Record<string, unknown>>>(`/api/demo/decisions?${q}`);
+  },
+  demoFills: (limit = 100, symbol?: string) => {
+    const q = new URLSearchParams({ limit: String(limit) });
+    if (symbol) q.set("symbol", symbol);
+    return getJson<Array<Record<string, unknown>>>(`/api/demo/fills?${q}`);
+  },
+  demoMarkers: (symbol: string) =>
+    getJson<{ markers: Array<Record<string, unknown>>; ledger: string }>(
+      `/api/demo/markers?symbol=${encodeURIComponent(symbol)}`
+    ),
   labStatus: () => getJson<Record<string, unknown>>("/api/lab/status"),
   labPause: async (token: string, reason = "dashboard_pause") => {
     const res = await fetch(`/api/lab/pause?reason=${encodeURIComponent(reason)}`, {

@@ -281,6 +281,18 @@ export default function AutoTradePage() {
           {String(lastCycle.orders_filled ?? 0)} · {String(lastCycle.duration_ms ?? "—")} ms
         </p>
         <p className="muted" style={{ fontSize: 12 }}>
+          Semántica: BUY/SELL = cruces detectados en el ciclo (no filas nuevas).{" "}
+          signals_new/enqueued/dup_signal/dup_order={" "}
+          {String((exec.meta_json as { last_signals?: Record<string, unknown> })?.last_signals?.signals_new ?? "—")}
+          /
+          {String((exec.meta_json as { last_signals?: Record<string, unknown> })?.last_signals?.enqueued ?? "—")}
+          /
+          {String((exec.meta_json as { last_signals?: Record<string, unknown> })?.last_signals?.duplicates_signal ?? "—")}
+          /
+          {String((exec.meta_json as { last_signals?: Record<string, unknown> })?.last_signals?.duplicates_order ?? "—")}
+          . duplicates en log = skips idempotentes (no doble fill).
+        </p>
+        <p className="muted" style={{ fontSize: 12 }}>
           SMA histórico: cash {fmtNum(sma.cash as number | null, 2)} · pos{" "}
           {String(sma.positions ?? "—")} · trades {String(sma.trades ?? "—")} · research_sim:{" "}
           {fmtNum(integrity.research_sim_cash as number | null, 2)} · lab cash:{" "}

@@ -81,6 +81,28 @@ services:
     depends_on:
       db:
         condition: service_healthy
+  express-runner:
+    build: ./backend
+    command: ["python", "-m", "app.express.runner"]
+    restart: "no"
+    environment:
+      DATABASE_URL: postgresql://paper:${DB_PASSWORD:?Set DB_PASSWORD}@db:5432/paper
+      EXPRESS_EVERY_SECONDS: "60"
+      TZ: UTC
+    depends_on:
+      db:
+        condition: service_healthy
+  demo-runner:
+    build: ./backend
+    command: ["python", "-m", "app.demo.runner"]
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://paper:${DB_PASSWORD:?Set DB_PASSWORD}@db:5432/paper
+      DEMO_EVERY_SECONDS: ${DEMO_EVERY_SECONDS:-60}
+      TZ: UTC
+    depends_on:
+      db:
+        condition: service_healthy
   ml-train:
     build: ./backend
     profiles: ["ml"]

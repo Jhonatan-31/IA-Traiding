@@ -489,8 +489,11 @@ async def run_lab_cycle(db_factory) -> dict[str, Any]:
                             "sell": signals.get("signals_sell"),
                             "hold": signals.get("signals_hold"),
                             "crosses": signals.get("crosses_detected"),
+                            "signals_new": signals.get("signals"),
                             "enqueued": signals.get("enqueued"),
                             "duplicates": signals.get("duplicates"),
+                            "duplicates_signal": signals.get("duplicates_signal"),
+                            "duplicates_order": signals.get("duplicates_order"),
                         },
                         "last_exits": exits,
                         "last_orders": {

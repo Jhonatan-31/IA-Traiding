@@ -17,6 +17,7 @@ from . import alerts as alerts_mod
 from . import chart_overlay
 from . import indicators
 from . import ohlcv as ohlcv_mod
+from . import performance_compare
 from . import risk as risk_mod
 from .ml.schema import ensure_ml_schema
 from .ml_api import router as ml_router
@@ -24,6 +25,8 @@ from .lab.schema import ensure_lab_schema
 from .lab_api import router as lab_router
 from .prospect.schema import ensure_prospect_schema
 from .prospect_api import router as prospect_router
+from .express.api import router as express_router
+from .demo.api import router as demo_router
 
 DATABASE_URL = os.environ["DATABASE_URL"]
 BASE = "https://data-api.binance.vision/api/v3"
@@ -523,6 +526,8 @@ app = FastAPI(title="AI Trading Bot - PAPER ONLY", lifespan=lifespan)
 app.include_router(ml_router)
 app.include_router(prospect_router)
 app.include_router(lab_router)
+app.include_router(express_router)
+app.include_router(demo_router)
 
 
 def serial(rows):
@@ -909,6 +914,34 @@ async def candles(
 @app.get("/api/risk")
 def risk_endpoint():
     return _load_risk_report()
+
+
+@app.get("/api/performance/compare")
+async def performance_compare_endpoint():
+    """Etapa Q — factual multi-ledger comparison (PAPER_ONLY, no invented Shadow PnL)."""
+    sma_risk = _load_risk_report()
+    lab_val: dict | None = None
+    try:
+        from .lab.ledger import snapshot as lab_snapshot
+        from .lab.valuation import fetch_marks, portfolio_valuation
+
+        with db() as c:
+            ensure_lab_schema(c.execute)
+            snap = lab_snapshot(c.execute)
+            syms = [p["symbol"] for p in (snap.get("positions") or [])]
+        marks = await fetch_marks(syms)
+        with db() as c:
+            ensure_lab_schema(c.execute)
+            lab_val = portfolio_valuation(c.execute, marks=marks)
+    except Exception as exc:
+        lab_val = {"valuation_status": "ERROR", "error": f"{type(exc).__name__}:{exc}"}
+    with db() as c:
+        ensure_lab_schema(c.execute)
+        ensure_prospect_schema(c.execute)
+        payload = performance_compare.build_performance_compare(
+            c.execute, lab_valuation=lab_val, sma_risk=sma_risk
+        )
+    return serial(payload)
 
 
 @app.get("/api/alerts")

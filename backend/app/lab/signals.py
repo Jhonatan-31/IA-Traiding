@@ -136,7 +136,9 @@ async def scan_and_enqueue(
         "signals_hold": 0,
         "crosses_detected": 0,
         "enqueued": 0,
-        "duplicates": 0,
+        "duplicates": 0,  # sum of signal+order idempotent skips (not double fills)
+        "duplicates_signal": 0,
+        "duplicates_order": 0,
         "errors": 0,
         "hold_sample": [],
         "eval_sample": [],
@@ -293,8 +295,11 @@ async def scan_and_enqueue(
                         meta=meta_sig,
                     )
                     if not sig.get("created"):
+                        # Idempotent skip: signal already exists for (strategy,symbol,side,candle_ms)
+                        summary["duplicates_signal"] += 1
                         summary["duplicates"] += 1
                     else:
+                        # Newly persisted lab_signals row (not the same as signals_buy)
                         summary["signals"] += 1
                     signal_id = (sig.get("signal") or {}).get("id")
                     # Never enqueue SELL without open lab inventory (no phantom sells)
@@ -334,6 +339,8 @@ async def scan_and_enqueue(
                     if enq.get("created"):
                         summary["enqueued"] += 1
                     else:
+                        # Idempotent skip: order already exists for unique key
+                        summary["duplicates_order"] += 1
                         summary["duplicates"] += 1
                     summary["items"].append(
                         {
@@ -341,8 +348,19 @@ async def scan_and_enqueue(
                             "side": side,
                             "candle_ms": candle_ms,
                             "enqueued": enq.get("created"),
+                            "signal_created": bool(sig.get("created")),
                             "reason": enq.get("reason") or analysis.get("reason"),
                             "cross_state": analysis.get("cross_state"),
+                            "idempotency": {
+                                "signal_key": ["strategy", "symbol", "side", "candle_ms"],
+                                "order_key": [
+                                    "account_id",
+                                    "strategy",
+                                    "symbol",
+                                    "side",
+                                    "candle_ms",
+                                ],
+                            },
                         }
                     )
             except Exception as exc:
