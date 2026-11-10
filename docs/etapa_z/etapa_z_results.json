@@ -1,0 +1,998 @@
+{
+  "etapa": "Z",
+  "experiment_id": "Z-20261110T221049Z",
+  "paper_only": true,
+  "available": true,
+  "git_rev": "unknown",
+  "config_hash": "5326edb8a539cfe5",
+  "costs": {
+    "fee": 0.001,
+    "slip": 0.0005,
+    "spread_bps": 1.0,
+    "cost_rt": 0.0031,
+    "capital": 1000.0
+  },
+  "data": {
+    "symbols": [
+      "BTCUSDT",
+      "ETHUSDT",
+      "SOLUSDT"
+    ],
+    "span": "2024-11-01 \u2192 2025-10-31",
+    "source": "binance_vision_parquet_ohlcv",
+    "holdout_w_consumed": true
+  },
+  "splits_1d": {
+    "n": 365,
+    "is": {
+      "i0": 40,
+      "i1": 255
+    },
+    "oos": {
+      "i0": 255,
+      "i1": 328
+    },
+    "holdout_w_consumed_slice": {
+      "i0": 328,
+      "i1": 365,
+      "usable_as_independent": false
+    },
+    "note": "Holdout W ya examinado en etapas W/X/Y \u2014 no se reporta como OOS virgen"
+  },
+  "splits_4h": {
+    "n": 2190,
+    "is": {
+      "i0": 40,
+      "i1": 1533
+    },
+    "oos": {
+      "i0": 1533,
+      "i1": 1971
+    },
+    "holdout_w_consumed_slice": {
+      "i0": 1971,
+      "i1": 2190,
+      "usable_as_independent": false
+    },
+    "note": "Holdout W ya examinado en etapas W/X/Y \u2014 no se reporta como OOS virgen"
+  },
+  "audit_z0": {
+    "etapa": "Z0",
+    "severity": "pass_with_notes",
+    "blocking_issues": [],
+    "symbols": [
+      {
+        "symbol": "BTCUSDT",
+        "summary": {
+          "symbol": "BTCUSDT",
+          "interval": "1m",
+          "available": true,
+          "verified": true,
+          "n_partitions": 12,
+          "n_bars": 525600,
+          "first_open_time": 1730419200000,
+          "last_open_time": 1761955140000,
+          "first_iso": "2024-11-01T00:00:00+00:00",
+          "last_iso": "2025-10-31T23:59:00+00:00",
+          "gap_count": 0,
+          "missing_bars_est": 0,
+          "duplicates": 0,
+          "ohlc_violations": 0,
+          "coverage_pct": 100.0,
+          "expected_bars_span": 525600,
+          "source": "binance_vision",
+          "partitions": [
+            {
+              "year": 2024,
+              "month": 11,
+              "n_bars": 43200,
+              "validation_ok": true,
+              "checksum_match": true
+            },
+            {
+              "year": 2024,
+              "month": 12,
+              "n_bars": 44640,
+              "validation_ok": true,
+              "checksum_match": true
+            },
+            {
+              "year": 2025,
+              "month": 1,
+              "n_bars": 44640,
+              "validation_ok": true,
+              "checksum_match": true
+            },
+            {
+              "year": 2025,
+              "month": 2,
+              "n_bars": 40320,
+              "validation_ok": true,
+              "checksum_match": true
+            },
+            {
+              "year": 2025,
+              "month": 3,
+              "n_bars": 44640,
+              "validation_ok": true,
+              "checksum_match": true
+            },
+            {
+              "year": 2025,
+              "month": 4,
+              "n_bars": 43200,
+              "validation_ok": true,
+              "checksum_match": true
+            },
+            {
+              "year": 2025,
+              "month": 5,
+              "n_bars": 44640,
+              "validation_ok": true,
+              "checksum_match": true
+            },
+            {
+              "year": 2025,
+              "month": 6,
+              "n_bars": 43200,
+              "validation_ok": true,
+              "checksum_match": true
+            },
+            {
+              "year": 2025,
+              "month": 7,
+              "n_bars": 44640,
+              "validation_ok": true,
+              "checksum_match": true
+            },
+            {
+              "year": 2025,
+              "month": 8,
+              "n_bars": 44640,
+              "validation_ok": true,
+              "checksum_match": true
+            },
+            {
+              "year": 2025,
+              "month": 9,
+              "n_bars": 43200,
+              "validation_ok": true,
+              "checksum_match": true
+            },
+            {
+              "year": 2025,
+              "month": 10,
+              "n_bars": 44640,
+              "validation_ok": true,
+              "checksum_match": true
+            }
+          ]
+        },
+        "issues": [],
+        "ok": true
+      },
+      {
+        "symbol": "ETHUSDT",
+        "summary": {
+          "symbol": "ETHUSDT",
+          "interval": "1m",
+          "available": true,
+          "verified": true,
+          "n_partitions": 12,
+          "n_bars": 525600,
+          "first_open_time": 1730419200000,
+          "last_open_time": 1761955140000,
+          "first_iso": "2024-11-01T00:00:00+00:00",
+          "last_iso": "2025-10-31T23:59:00+00:00",
+          "gap_count": 0,
+          "missing_bars_est": 0,
+          "duplicates": 0,
+          "ohlc_violations": 0,
+          "coverage_pct": 100.0,
+          "expected_bars_span": 525600,
+          "source": "binance_vision",
+          "partitions": [
+            {
+              "year": 2024,
+              "month": 11,
+              "n_bars": 43200,
+              "validation_ok": true,
+              "checksum_match": true
+            },
+            {
+              "year": 2024,
+              "month": 12,
+              "n_bars": 44640,
+              "validation_ok": true,
+              "checksum_match": true
+            },
+            {
+              "year": 2025,
+              "month": 1,
+              "n_bars": 44640,
+              "validation_ok": true,
+              "checksum_match": true
+            },
+            {
+              "year": 2025,
+              "month": 2,
+              "n_bars": 40320,
+              "validation_ok": true,
+              "checksum_match": true
+            },
+            {
+              "year": 2025,
+              "month": 3,
+              "n_bars": 44640,
+              "validation_ok": true,
+              "checksum_match": true
+            },
+            {
+              "year": 2025,
+              "month": 4,
+              "n_bars": 43200,
+              "validation_ok": true,
+              "checksum_match": true
+            },
+            {
+              "year": 2025,
+              "month": 5,
+              "n_bars": 44640,
+              "validation_ok": true,
+              "checksum_match": true
+            },
+            {
+              "year": 2025,
+              "month": 6,
+              "n_bars": 43200,
+              "validation_ok": true,
+              "checksum_match": true
+            },
+            {
+              "year": 2025,
+              "month": 7,
+              "n_bars": 44640,
+              "validation_ok": true,
+              "checksum_match": true
+            },
+            {
+              "year": 2025,
+              "month": 8,
+              "n_bars": 44640,
+              "validation_ok": true,
+              "checksum_match": true
+            },
+            {
+              "year": 2025,
+              "month": 9,
+              "n_bars": 43200,
+              "validation_ok": true,
+              "checksum_match": true
+            },
+            {
+              "year": 2025,
+              "month": 10,
+              "n_bars": 44640,
+              "validation_ok": true,
+              "checksum_match": true
+            }
+          ]
+        },
+        "issues": [],
+        "ok": true
+      },
+      {
+        "symbol": "SOLUSDT",
+        "summary": {
+          "symbol": "SOLUSDT",
+          "interval": "1m",
+          "available": true,
+          "verified": true,
+          "n_partitions": 12,
+          "n_bars": 525600,
+          "first_open_time": 1730419200000,
+          "last_open_time": 1761955140000,
+          "first_iso": "2024-11-01T00:00:00+00:00",
+          "last_iso": "2025-10-31T23:59:00+00:00",
+          "gap_count": 0,
+          "missing_bars_est": 0,
+          "duplicates": 0,
+          "ohlc_violations": 0,
+          "coverage_pct": 100.0,
+          "expected_bars_span": 525600,
+          "source": "binance_vision",
+          "partitions": [
+            {
+              "year": 2024,
+              "month": 11,
+              "n_bars": 43200,
+              "validation_ok": true,
+              "checksum_match": true
+            },
+            {
+              "year": 2024,
+              "month": 12,
+              "n_bars": 44640,
+              "validation_ok": true,
+              "checksum_match": true
+            },
+            {
+              "year": 2025,
+              "month": 1,
+              "n_bars": 44640,
+              "validation_ok": true,
+              "checksum_match": true
+            },
+            {
+              "year": 2025,
+              "month": 2,
+              "n_bars": 40320,
+              "validation_ok": true,
+              "checksum_match": true
+            },
+            {
+              "year": 2025,
+              "month": 3,
+              "n_bars": 44640,
+              "validation_ok": true,
+              "checksum_match": true
+            },
+            {
+              "year": 2025,
+              "month": 4,
+              "n_bars": 43200,
+              "validation_ok": true,
+              "checksum_match": true
+            },
+            {
+              "year": 2025,
+              "month": 5,
+              "n_bars": 44640,
+              "validation_ok": true,
+              "checksum_match": true
+            },
+            {
+              "year": 2025,
+              "month": 6,
+              "n_bars": 43200,
+              "validation_ok": true,
+              "checksum_match": true
+            },
+            {
+              "year": 2025,
+              "month": 7,
+              "n_bars": 44640,
+              "validation_ok": true,
+              "checksum_match": true
+            },
+            {
+              "year": 2025,
+              "month": 8,
+              "n_bars": 44640,
+              "validation_ok": true,
+              "checksum_match": true
+            },
+            {
+              "year": 2025,
+              "month": 9,
+              "n_bars": 43200,
+              "validation_ok": true,
+              "checksum_match": true
+            },
+            {
+              "year": 2025,
+              "month": 10,
+              "n_bars": 44640,
+              "validation_ok": true,
+              "checksum_match": true
+            }
+          ]
+        },
+        "issues": [],
+        "ok": true
+      }
+    ],
+    "aggregation": {
+      "ok": true,
+      "issues": [],
+      "n_1d_week": 7,
+      "n_4h_week": 42,
+      "schema_note": "Parquet research solo OHLCV; columnas taker_buy de Vision no persistidas"
+    },
+    "causality": {
+      "ok": true,
+      "decision_bar": "closed",
+      "execution": "same_bar_close_with_slip_conservative",
+      "intrabar_ambiguous": "SL_before_TP",
+      "holdout_w_consumed": true,
+      "note": "No usar \u00faltimos 10% del span 2024-11\u21922025-10 como holdout independiente"
+    },
+    "notes": [
+      "OHLCV 1m verificado 525600 barras/s\u00edmbolo, 0 huecos reportados",
+      "taker_buy / book / BBO hist\u00f3ricos no est\u00e1n en Parquet actual",
+      "Holdout W consumido en etapas previas"
+    ],
+    "continue_to_economic_research": true,
+    "generated_at": "2026-11-10T22:11:25.146056+00:00"
+  },
+  "hypotheses": [
+    {
+      "id": "Z-BH-BTC",
+      "title": "Buy & hold BTC",
+      "kind": "benchmark",
+      "economic": "Benchmark pasivo spot BTC.",
+      "rule": "100% BTC desde barra warm; hold hasta fin.",
+      "tf": "1d",
+      "frozen": true,
+      "reject_if": "N/A benchmark",
+      "advance_if": "N/A"
+    },
+    {
+      "id": "Z-BH-EQ",
+      "title": "Buy & hold equiponderado",
+      "kind": "benchmark",
+      "economic": "Exposici\u00f3n 1/3 BTC+ETH+SOL rebalance diario por pesos (con costos).",
+      "rule": "Pesos 1/3; rebalance diario al close.",
+      "tf": "1d",
+      "frozen": true,
+      "reject_if": "N/A",
+      "advance_if": "N/A"
+    },
+    {
+      "id": "Z-TSMOM-D28H5",
+      "title": "TS momentum 28d / hold 5d (long-only)",
+      "kind": "hypothesis",
+      "economic": "Persistencia de retornos a horizontes de semanas puede superar costos mejor que intrad\u00eda corto (Moskowitz et al.; evidencia cripto mixta).",
+      "new_info": "Retorno propio 28d cerrado; no usa salidas intrad\u00eda A/V-BREAK.",
+      "universe": [
+        "BTCUSDT",
+        "ETHUSDT",
+        "SOLUSDT"
+      ],
+      "tf": "1d",
+      "entry": "Si retorno[t-28:t] > 0 \u2192 long; si \u22640 \u2192 cash.",
+      "exit": "Reevaluaci\u00f3n diaria; hold m\u00ednimo impl\u00edcito por se\u00f1al.",
+      "abstain": "Retorno lookback \u2264 0.",
+      "params": {
+        "lookback": 28,
+        "min_hold": 5
+      },
+      "frozen": true,
+      "reject_if": "neto OOS \u2264 BH equivalente o \u2264 0 tras costos; N insuficiente; DD > 1.5\u00d7 BH",
+      "advance_if": "neto OOS > max(0, BH_EQ) y coste-stress OK y adversarial sin bloqueo"
+    },
+    {
+      "id": "Z-TSMOM-VOL",
+      "title": "TSMOM 28d con volatility targeting",
+      "kind": "hypothesis",
+      "economic": "Escalar exposici\u00f3n ~10% vol anualizada puede mejorar ratio riesgo/retorno.",
+      "new_info": "Vol realizada 20d + se\u00f1al TSMOM.",
+      "universe": [
+        "BTCUSDT",
+        "ETHUSDT",
+        "SOLUSDT"
+      ],
+      "tf": "1d",
+      "entry": "Se\u00f1al TSMOM; tama\u00f1o = clip(target_vol/realized_vol, 0, 1).",
+      "exit": "Igual TSMOM; tama\u00f1o se actualiza diario.",
+      "params": {
+        "lookback": 28,
+        "vol_lb": 20,
+        "target_vol": 0.1
+      },
+      "frozen": true,
+      "reject_if": "no mejora neto vs TSMOM plano o vs cash tras costos",
+      "advance_if": "mejora sharpe/neto vs Z-TSMOM-D28H5 y BH en OOS"
+    },
+    {
+      "id": "Z-RS-TOP1",
+      "title": "Rotaci\u00f3n fortaleza relativa top-1",
+      "kind": "hypothesis",
+      "economic": "Momentum relativo puede concentrar exposici\u00f3n en el activo m\u00e1s fuerte.",
+      "new_info": "Ranking 30d entre 3 activos (universo peque\u00f1o \u2014 no generalizable).",
+      "universe": [
+        "BTCUSDT",
+        "ETHUSDT",
+        "SOLUSDT"
+      ],
+      "tf": "1d",
+      "entry": "Cada 7d: comprar el de mayor retorno 30d si >0; si todos \u22640 \u2192 cash.",
+      "exit": "Al siguiente rebalance.",
+      "params": {
+        "lookback": 30,
+        "rebalance_every": 7
+      },
+      "frozen": true,
+      "warning": "Universo N=3 \u2192 sesgo y baja diversificaci\u00f3n",
+      "reject_if": "neto \u2264 BH-EQ o dependencia de 1 activo; costos de rotaci\u00f3n altos",
+      "advance_if": "supera BH-EQ en OOS con DD acotado"
+    },
+    {
+      "id": "Z-4H-MOM12",
+      "title": "Momentum 4h (12 barras \u2248 48h)",
+      "kind": "hypothesis",
+      "economic": "Horizonte intermedio entre intrad\u00eda y diario.",
+      "new_info": "Se\u00f1al en 4h cerrada.",
+      "universe": [
+        "BTCUSDT",
+        "ETHUSDT",
+        "SOLUSDT"
+      ],
+      "tf": "4h",
+      "entry": "retorno 12 barras > 0 \u2192 long equal-weight; else cash.",
+      "exit": "reevaluaci\u00f3n cada barra 4h",
+      "params": {
+        "lookback": 12
+      },
+      "frozen": true,
+      "reject_if": "neto \u2264 0 OOS o peor que diario TSMOM",
+      "advance_if": "edge neto robusto tras costos"
+    }
+  ],
+  "in_sample": {
+    "Z-BH-BTC": {
+      "id": "Z-BH-BTC",
+      "ok": true,
+      "title": "Buy & hold BTC",
+      "kind": "benchmark",
+      "tf": "1d",
+      "period_bars": 215,
+      "n_times_available": 365,
+      "net_vs_initial": 175.7953,
+      "equity": 1175.7953,
+      "max_drawdown": 0.280952,
+      "fees_and_frictions": 1.547597,
+      "turnover_events": 1,
+      "avg_exposure": 0.995346,
+      "n_bars": 215,
+      "sharpe_proxy": 0.8314,
+      "cost_rt_frac_assumed": 0.0031,
+      "cost_stress_net": 175.0215,
+      "meta": {
+        "economic": "Benchmark pasivo spot BTC.",
+        "reject_if": "N/A benchmark",
+        "advance_if": "N/A"
+      }
+    },
+    "Z-BH-EQ": {
+      "id": "Z-BH-EQ",
+      "ok": true,
+      "title": "Buy & hold equiponderado",
+      "kind": "benchmark",
+      "tf": "1d",
+      "period_bars": 215,
+      "n_times_available": 365,
+      "net_vs_initial": -107.9662,
+      "equity": 892.0338,
+      "max_drawdown": 0.483075,
+      "fees_and_frictions": 4.085561,
+      "turnover_events": 402,
+      "avg_exposure": 0.992521,
+      "n_bars": 215,
+      "sharpe_proxy": 0.0344,
+      "cost_rt_frac_assumed": 0.0031,
+      "cost_stress_net": -110.009,
+      "meta": {
+        "economic": "Exposici\u00f3n 1/3 BTC+ETH+SOL rebalance diario por pesos (con costos).",
+        "reject_if": "N/A",
+        "advance_if": "N/A"
+      }
+    },
+    "Z-TSMOM-D28H5": {
+      "id": "Z-TSMOM-D28H5",
+      "ok": true,
+      "title": "TS momentum 28d / hold 5d (long-only)",
+      "kind": "hypothesis",
+      "tf": "1d",
+      "period_bars": 215,
+      "n_times_available": 365,
+      "net_vs_initial": -203.4684,
+      "equity": 796.5316,
+      "max_drawdown": 0.348456,
+      "fees_and_frictions": 55.0642,
+      "turnover_events": 221,
+      "avg_exposure": 0.559806,
+      "n_bars": 215,
+      "sharpe_proxy": -0.8574,
+      "cost_rt_frac_assumed": 0.0031,
+      "cost_stress_net": -231.0005,
+      "meta": {
+        "economic": "Persistencia de retornos a horizontes de semanas puede superar costos mejor que intrad\u00eda corto (Moskowitz et al.; evidencia cripto mixta).",
+        "reject_if": "neto OOS \u2264 BH equivalente o \u2264 0 tras costos; N insuficiente; DD > 1.5\u00d7 BH",
+        "advance_if": "neto OOS > max(0, BH_EQ) y coste-stress OK y adversarial sin bloqueo"
+      }
+    },
+    "Z-TSMOM-VOL": {
+      "id": "Z-TSMOM-VOL",
+      "ok": true,
+      "title": "TSMOM 28d con volatility targeting",
+      "kind": "hypothesis",
+      "tf": "1d",
+      "period_bars": 215,
+      "n_times_available": 365,
+      "net_vs_initial": -22.5188,
+      "equity": 977.4812,
+      "max_drawdown": 0.079116,
+      "fees_and_frictions": 16.194412,
+      "turnover_events": 216,
+      "avg_exposure": 0.114084,
+      "n_bars": 215,
+      "sharpe_proxy": -0.4883,
+      "cost_rt_frac_assumed": 0.0031,
+      "cost_stress_net": -30.616,
+      "meta": {
+        "economic": "Escalar exposici\u00f3n ~10% vol anualizada puede mejorar ratio riesgo/retorno.",
+        "reject_if": "no mejora neto vs TSMOM plano o vs cash tras costos",
+        "advance_if": "mejora sharpe/neto vs Z-TSMOM-D28H5 y BH en OOS"
+      }
+    },
+    "Z-RS-TOP1": {
+      "id": "Z-RS-TOP1",
+      "ok": true,
+      "title": "Rotaci\u00f3n fortaleza relativa top-1",
+      "kind": "hypothesis",
+      "tf": "1d",
+      "period_bars": 215,
+      "n_times_available": 365,
+      "net_vs_initial": -109.0175,
+      "equity": 890.9825,
+      "max_drawdown": 0.442046,
+      "fees_and_frictions": 24.114679,
+      "turnover_events": 19,
+      "avg_exposure": 0.562789,
+      "n_bars": 215,
+      "sharpe_proxy": -0.2104,
+      "cost_rt_frac_assumed": 0.0031,
+      "cost_stress_net": -121.0748,
+      "meta": {
+        "economic": "Momentum relativo puede concentrar exposici\u00f3n en el activo m\u00e1s fuerte.",
+        "reject_if": "neto \u2264 BH-EQ o dependencia de 1 activo; costos de rotaci\u00f3n altos",
+        "advance_if": "supera BH-EQ en OOS con DD acotado",
+        "warning": "Universo N=3 \u2192 sesgo y baja diversificaci\u00f3n"
+      }
+    },
+    "Z-4H-MOM12": {
+      "id": "Z-4H-MOM12",
+      "ok": true,
+      "title": "Momentum 4h (12 barras \u2248 48h)",
+      "kind": "hypothesis",
+      "tf": "4h",
+      "period_bars": 1493,
+      "n_times_available": 2190,
+      "net_vs_initial": -454.6862,
+      "equity": 545.3138,
+      "max_drawdown": 0.599376,
+      "fees_and_frictions": 514.506199,
+      "turnover_events": 1591,
+      "avg_exposure": 0.63193,
+      "n_bars": 1493,
+      "sharpe_proxy": -1.5584,
+      "cost_rt_frac_assumed": 0.0031,
+      "cost_stress_net": -711.9393,
+      "meta": {
+        "economic": "Horizonte intermedio entre intrad\u00eda y diario.",
+        "reject_if": "neto \u2264 0 OOS o peor que diario TSMOM",
+        "advance_if": "edge neto robusto tras costos"
+      }
+    }
+  },
+  "oos": {
+    "Z-BH-BTC": {
+      "id": "Z-BH-BTC",
+      "ok": true,
+      "title": "Buy & hold BTC",
+      "kind": "benchmark",
+      "tf": "1d",
+      "period_bars": 73,
+      "n_times_available": 365,
+      "net_vs_initial": -55.9867,
+      "equity": 944.0133,
+      "max_drawdown": 0.122135,
+      "fees_and_frictions": 1.547597,
+      "turnover_events": 1,
+      "avg_exposure": 0.986299,
+      "n_bars": 73,
+      "sharpe_proxy": -0.9212,
+      "cost_rt_frac_assumed": 0.0031,
+      "cost_stress_net": -56.7605,
+      "meta": {
+        "economic": "Benchmark pasivo spot BTC.",
+        "reject_if": "N/A benchmark",
+        "advance_if": "N/A"
+      }
+    },
+    "Z-BH-EQ": {
+      "id": "Z-BH-EQ",
+      "ok": true,
+      "title": "Buy & hold equiponderado",
+      "kind": "benchmark",
+      "tf": "1d",
+      "period_bars": 73,
+      "n_times_available": 365,
+      "net_vs_initial": 201.7695,
+      "equity": 1201.7695,
+      "max_drawdown": 0.130466,
+      "fees_and_frictions": 2.971396,
+      "turnover_events": 167,
+      "avg_exposure": 0.982708,
+      "n_bars": 73,
+      "sharpe_proxy": 2.0117,
+      "cost_rt_frac_assumed": 0.0031,
+      "cost_stress_net": 200.2838,
+      "meta": {
+        "economic": "Exposici\u00f3n 1/3 BTC+ETH+SOL rebalance diario por pesos (con costos).",
+        "reject_if": "N/A",
+        "advance_if": "N/A"
+      }
+    },
+    "Z-TSMOM-D28H5": {
+      "id": "Z-TSMOM-D28H5",
+      "ok": true,
+      "title": "TS momentum 28d / hold 5d (long-only)",
+      "kind": "hypothesis",
+      "tf": "1d",
+      "period_bars": 73,
+      "n_times_available": 365,
+      "net_vs_initial": 340.5377,
+      "equity": 1340.5377,
+      "max_drawdown": 0.130466,
+      "fees_and_frictions": 23.049748,
+      "turnover_events": 136,
+      "avg_exposure": 0.947155,
+      "n_bars": 73,
+      "sharpe_proxy": 2.6342,
+      "cost_rt_frac_assumed": 0.0031,
+      "cost_stress_net": 329.0128,
+      "meta": {
+        "economic": "Persistencia de retornos a horizontes de semanas puede superar costos mejor que intrad\u00eda corto (Moskowitz et al.; evidencia cripto mixta).",
+        "reject_if": "neto OOS \u2264 BH equivalente o \u2264 0 tras costos; N insuficiente; DD > 1.5\u00d7 BH",
+        "advance_if": "neto OOS > max(0, BH_EQ) y coste-stress OK y adversarial sin bloqueo"
+      }
+    },
+    "Z-TSMOM-VOL": {
+      "id": "Z-TSMOM-VOL",
+      "ok": true,
+      "title": "TSMOM 28d con volatility targeting",
+      "kind": "hypothesis",
+      "tf": "1d",
+      "period_bars": 73,
+      "n_times_available": 365,
+      "net_vs_initial": 27.9401,
+      "equity": 1027.9401,
+      "max_drawdown": 0.029945,
+      "fees_and_frictions": 5.73074,
+      "turnover_events": 131,
+      "avg_exposure": 0.192557,
+      "n_bars": 73,
+      "sharpe_proxy": 1.4131,
+      "cost_rt_frac_assumed": 0.0031,
+      "cost_stress_net": 25.0747,
+      "meta": {
+        "economic": "Escalar exposici\u00f3n ~10% vol anualizada puede mejorar ratio riesgo/retorno.",
+        "reject_if": "no mejora neto vs TSMOM plano o vs cash tras costos",
+        "advance_if": "mejora sharpe/neto vs Z-TSMOM-D28H5 y BH en OOS"
+      }
+    },
+    "Z-RS-TOP1": {
+      "id": "Z-RS-TOP1",
+      "ok": true,
+      "title": "Rotaci\u00f3n fortaleza relativa top-1",
+      "kind": "hypothesis",
+      "tf": "1d",
+      "period_bars": 73,
+      "n_times_available": 365,
+      "net_vs_initial": 405.6666,
+      "equity": 1405.6666,
+      "max_drawdown": 0.14505,
+      "fees_and_frictions": 5.963684,
+      "turnover_events": 3,
+      "avg_exposure": 0.986299,
+      "n_bars": 73,
+      "sharpe_proxy": 2.7579,
+      "cost_rt_frac_assumed": 0.0031,
+      "cost_stress_net": 402.6848,
+      "meta": {
+        "economic": "Momentum relativo puede concentrar exposici\u00f3n en el activo m\u00e1s fuerte.",
+        "reject_if": "neto \u2264 BH-EQ o dependencia de 1 activo; costos de rotaci\u00f3n altos",
+        "advance_if": "supera BH-EQ en OOS con DD acotado",
+        "warning": "Universo N=3 \u2192 sesgo y baja diversificaci\u00f3n"
+      }
+    },
+    "Z-4H-MOM12": {
+      "id": "Z-4H-MOM12",
+      "ok": true,
+      "title": "Momentum 4h (12 barras \u2248 48h)",
+      "kind": "hypothesis",
+      "tf": "4h",
+      "period_bars": 438,
+      "n_times_available": 2190,
+      "net_vs_initial": 103.3457,
+      "equity": 1103.3457,
+      "max_drawdown": 0.165205,
+      "fees_and_frictions": 210.181724,
+      "turnover_events": 506,
+      "avg_exposure": 0.655196,
+      "n_bars": 438,
+      "sharpe_proxy": 1.4121,
+      "cost_rt_frac_assumed": 0.0031,
+      "cost_stress_net": -1.7452,
+      "meta": {
+        "economic": "Horizonte intermedio entre intrad\u00eda y diario.",
+        "reject_if": "neto \u2264 0 OOS o peor que diario TSMOM",
+        "advance_if": "edge neto robusto tras costos"
+      }
+    }
+  },
+  "adversarial": {
+    "findings": [
+      {
+        "id": "Z-TSMOM-D28H5",
+        "critical": false,
+        "notes": [],
+        "blocks_promotion": false
+      },
+      {
+        "id": "Z-TSMOM-VOL",
+        "critical": true,
+        "notes": [
+          "no_supera_benchmark_equiponderado"
+        ],
+        "blocks_promotion": true
+      },
+      {
+        "id": "Z-RS-TOP1",
+        "critical": true,
+        "notes": [
+          "pocas_rebalances_dependencia_muestra",
+          "universo_N3_no_generalizable"
+        ],
+        "blocks_promotion": true
+      },
+      {
+        "id": "Z-4H-MOM12",
+        "critical": true,
+        "notes": [
+          "no_supera_benchmark_equiponderado",
+          "sensible_a_costos"
+        ],
+        "blocks_promotion": true
+      }
+    ],
+    "checklist": {
+      "future_info": false,
+      "winner_markets_selected_ex_post": "universo fijo BTC/ETH/SOL predefinido",
+      "too_many_params": false,
+      "optimistic_costs": "fee 10bps + slip 5bps + spread proxy; stress +50% frictions",
+      "few_trades_dependency": "revisar turnover_events por hip\u00f3tesis",
+      "higher_exposure_artifact": "comparar vs BH-EQ y BH-BTC",
+      "mismatched_periods": false,
+      "unexecutable_prices": "close+slip; sin BBO hist\u00f3rico",
+      "omitted_failed_orders": "simulaci\u00f3n completa long-only",
+      "overstated_precision": "sin reconstrucci\u00f3n de libro",
+      "cost_increase_kills_edge": "ver cost_stress_net",
+      "vanishes_vs_simple_benchmark": "ver vs Z-BH-EQ / Z-BH-BTC"
+    },
+    "promote_any": false,
+    "unblocked_but_not_promoted": [
+      "Z-TSMOM-D28H5"
+    ],
+    "summary": "Hay l\u00edneas no bloqueadas por adversarial duro, pero sin holdout temporal virgen no se promueven. El resto queda descartado por benchmark/costos/muestra/universo."
+  },
+  "classification": {
+    "discarded": [
+      {
+        "id": "Z-TSMOM-VOL",
+        "net_oos": 27.9401,
+        "dd": 0.029945,
+        "vs_bh_eq": -173.8294,
+        "stress": 25.0747,
+        "exposure": 0.192557,
+        "reason": [
+          "no_supera_benchmark_equiponderado"
+        ]
+      },
+      {
+        "id": "Z-RS-TOP1",
+        "net_oos": 405.6666,
+        "dd": 0.14505,
+        "vs_bh_eq": 203.8971,
+        "stress": 402.6848,
+        "exposure": 0.986299,
+        "reason": [
+          "pocas_rebalances_dependencia_muestra",
+          "universo_N3_no_generalizable"
+        ]
+      },
+      {
+        "id": "Z-4H-MOM12",
+        "net_oos": 103.3457,
+        "dd": 0.165205,
+        "vs_bh_eq": -98.4238,
+        "stress": -1.7452,
+        "exposure": 0.655196,
+        "reason": [
+          "no_supera_benchmark_equiponderado",
+          "sensible_a_costos"
+        ]
+      }
+    ],
+    "exploratory": [
+      {
+        "id": "Z-TSMOM-D28H5",
+        "net_oos": 340.5377,
+        "dd": 0.130466,
+        "vs_bh_eq": 138.7682,
+        "stress": 329.0128,
+        "exposure": 0.947155,
+        "status": "exploratory_no_virgin_holdout"
+      }
+    ],
+    "candidates_for_virtual_validation": []
+  },
+  "microstructure": {
+    "fase": "Z4",
+    "available_now": {
+      "spot_ohlcv_1m_parquet": true,
+      "taker_buy_in_parquet": false,
+      "public_trades_history": false,
+      "order_book_snapshots": false,
+      "bbo_history": false
+    },
+    "vision_klines_note": "Los CSV de Binance Vision klines incluyen taker_buy_base/quote, pero el store Parquet actual solo persiste OHLCV. No inventamos profundidad desde OHLCV.",
+    "to_enable_ofi_smoke": {
+      "action": "re-ingestar klines con columnas taker_buy O descargar 1 d\u00eda de aggTrades",
+      "estimated_aggtrades_1day_btc_mb": "50\u2013200 (variable)",
+      "disk_free_gb": 985.75,
+      "policy": "no descarga masiva en esta etapa sin aprobaci\u00f3n de tama\u00f1o"
+    },
+    "streaming_only": [
+      "bookTicker live",
+      "depth live \u2014 requiere grabaci\u00f3n prospectiva"
+    ],
+    "verdict": "insufficient_for_micro_edge_claim",
+    "generated_at": "2026-11-10T22:12:44.004506+00:00"
+  },
+  "derivatives": {
+    "fase": "Z5",
+    "spot_execution_only": true,
+    "leverage_enabled": false,
+    "sources": {
+      "funding_rate_vision": {
+        "available": true,
+        "path_pattern": "data/futures/um/monthly/fundingRate/{SYMBOL}/",
+        "ingested": false,
+        "latency_note": "archivo mensual ~2 d\u00edas despu\u00e9s; no usar como si fuera live"
+      },
+      "open_interest_vision_metrics": {
+        "available": true,
+        "path_pattern": "data/futures/um/daily/metrics/",
+        "ingested": false,
+        "size_warning": "m\u00e9tricas 5m diarias \u2014 estimar antes de bajar 12m\u00d73 s\u00edmbolos"
+      },
+      "open_interest_rest": {
+        "available": "\u00faltimos ~30 d\u00edas",
+        "insufficient_for_2024_2025_panel": true
+      }
+    },
+    "hypotheses_not_tested_here": [
+      "funding alto \u2192 short spot (no probado: sin serie ingestada)",
+      "\u0394OI + precio \u2192 breakout (no probado)"
+    ],
+    "verdict": "informative_source_possible_after_controlled_ingest",
+    "capital_ref": 1000.0,
+    "generated_at": "2026-11-10T22:12:44.004541+00:00"
+  },
+  "literature_summary": {
+    "tsmom_classic": "Moskowitz, Ooi, Pedersen (2012) JFE \u2014 TSMOM 1\u201312m en futuros",
+    "crypto_realistic_costs": "Han/Kang/Ryu (ACFR PDF) \u2014 con costos reales muchos portfolios momentum se liquidan; TSMOM m\u00e1s fuerte que CSMOM",
+    "liu_tsyviniski": "Momentum cripto a 1\u20138 semanas documentado; no garantiza edge spot retail post-costos",
+    "our_inference": "Horizontes mayores merecen prueba; no implica rentabilidad en BTC/ETH/SOL 2024-25"
+  },
+  "claim": {
+    "activate": false,
+    "declare_profitable": false,
+    "verdict": "EXISTEN HIP\u00d3TESIS EXPLORATORIAS, SIN VALIDAR",
+    "reason": "Sin holdout temporal virgen post-consumo W; hallazgos solo exploratorios."
+  },
+  "generated_at": "2026-11-10T22:12:44.006250+00:00"
+}

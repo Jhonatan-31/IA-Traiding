@@ -524,13 +524,15 @@ export const api = {
     runBacktest = false,
     runBacktestW = false,
     runDiagnoseX = false,
-    runExitsY = false
+    runExitsY = false,
+    runEtapaZ = false
   ) =>
     getJson<Record<string, unknown>>(
-      `/api/research/center?run_backtest=${runBacktest ? "true" : "false"}&run_backtest_w=${runBacktestW ? "true" : "false"}&run_diagnose_x=${runDiagnoseX ? "true" : "false"}&run_exits_y=${runExitsY ? "true" : "false"}`
+      `/api/research/center?run_backtest=${runBacktest ? "true" : "false"}&run_backtest_w=${runBacktestW ? "true" : "false"}&run_diagnose_x=${runDiagnoseX ? "true" : "false"}&run_exits_y=${runExitsY ? "true" : "false"}&run_etapa_z=${runEtapaZ ? "true" : "false"}`
     ),
   researchDiagnoseX: () => getJson<Record<string, unknown>>("/api/research/diagnose-x"),
   researchExitsY: () => getJson<Record<string, unknown>>("/api/research/exits-y"),
+  researchEtapaZ: () => getJson<Record<string, unknown>>("/api/research/etapa-z"),
   researchForensicA: () => getJson<Record<string, unknown>>("/api/research/forensic-a"),
   researchBacktestV: (limit = 1000) =>
     getJson<Record<string, unknown>>(`/api/research/backtest-v?limit=${limit}`),

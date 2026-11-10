@@ -12,10 +12,10 @@ export default function ResearchCenterPage() {
   const [histMsg, setHistMsg] = useState<string | null>(null);
 
   const load = useCallback(
-    async (runBt = false, runBtW = false, runDx = false, runEy = false) => {
+    async (runBt = false, runBtW = false, runDx = false, runEy = false, runEz = false) => {
       try {
         setBusy(true);
-        const r = await api.researchCenter(runBt, runBtW, runDx, runEy);
+        const r = await api.researchCenter(runBt, runBtW, runDx, runEy, runEz);
         setData(r);
         setError(null);
       } catch {
@@ -28,7 +28,7 @@ export default function ResearchCenterPage() {
   );
 
   useEffect(() => {
-    void load(false, false, false, false);
+    void load(false, false, false, false, false);
   }, [load]);
 
   const forensic = (data?.forensic_summary || null) as Record<string, unknown> | null;
@@ -52,6 +52,10 @@ export default function ResearchCenterPage() {
   const sellDiag = (selling?.diagnosis_y0 || {}) as Record<string, Record<string, unknown>>;
   const sellCands = (selling?.candidates as Array<Record<string, unknown>>) || [];
   const sellClaim = (selling?.claim || {}) as Record<string, unknown>;
+  const lab = (data?.advanced_lab || null) as Record<string, unknown> | null;
+  const labRows = (lab?.comparison_rows as Array<Record<string, unknown>>) || [];
+  const labExec = (lab?.executive || {}) as Record<string, unknown>;
+  const labHyps = (lab?.hypotheses_human as Array<Record<string, unknown>>) || [];
 
   const runSmoke = async () => {
     try {
@@ -72,9 +76,9 @@ export default function ResearchCenterPage() {
   return (
     <div>
       <PageHeader
-        eyebrow="Etapa Y"
+        eyebrow="Etapa Z"
         title="Centro de Investigación de Estrategias"
-        subtitle="¿Vendemos demasiado pronto? Entradas fijas A/V-BREAK; solo salidas Y0–Y4. A y B detenidos. Sin activación."
+        subtitle="Laboratorio avanzado: horizontes mayores, fortaleza relativa y benchmarks. A y B detenidos. Sin activación."
         actions={
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             <button type="button" className="btn" disabled={busy} onClick={() => void runSmoke()}>
@@ -84,17 +88,17 @@ export default function ResearchCenterPage() {
               type="button"
               className="btn"
               disabled={busy}
-              onClick={() => void load(false, false, true, false)}
+              onClick={() => void load(false, false, false, true, false)}
             >
-              Diagnóstico régimen
+              Analizar salidas Y
             </button>
             <button
               type="button"
               className="btn btn-primary"
               disabled={busy}
-              onClick={() => void load(false, false, false, true)}
+              onClick={() => void load(false, false, false, false, true)}
             >
-              {busy ? "Calculando…" : "Analizar salidas"}
+              {busy ? "Calculando…" : "Ejecutar laboratorio Z"}
             </button>
           </div>
         }
@@ -163,6 +167,83 @@ export default function ResearchCenterPage() {
             );
           })}
         </div>
+      </section>
+
+      <section className="panel" style={{ marginTop: 16 }}>
+        <div className="panel-title">
+          <h3 style={{ margin: 0 }}>Laboratorio de Estrategias Avanzadas</h3>
+          <StatusBadge variant={lab?.available ? "ok" : "neutral"}>
+            {lab?.available ? "Resultados Z" : "Pendiente"}
+          </StatusBadge>
+        </div>
+        <p style={{ fontSize: 13, lineHeight: 1.45 }}>
+          {String(lab?.verdict || "Ejecuta el laboratorio Z para evaluar hipótesis de horizonte mayor.")}
+        </p>
+        {!Boolean(lab?.available) && (
+          <p className="muted">Pulsa «Ejecutar laboratorio Z» (agrega 1d/4h desde Parquet 1m).</p>
+        )}
+        {Boolean(lab?.available) && (
+          <>
+            <div className="metric-grid">
+              <MetricCard label="Hipótesis" value={Number(labExec.investigated || 0)} />
+              <MetricCard label="Descartadas" value={Number(labExec.discarded || 0)} />
+              <MetricCard label="Exploratorias" value={Number(labExec.exploratory || 0)} />
+              <MetricCard label="Candidatas" value={Number(labExec.candidates || 0)} />
+            </div>
+            <h4>Comparador (OOS comparable)</h4>
+            <div style={{ overflowX: "auto" }}>
+              <table className="table" style={{ fontSize: 13, width: "100%" }}>
+                <thead>
+                  <tr>
+                    <th>Hipótesis</th>
+                    <th>TF</th>
+                    <th>Neto</th>
+                    <th>Drawdown</th>
+                    <th>Exposición</th>
+                    <th>Costos</th>
+                    <th>Stress</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {labRows.map((r) => (
+                    <tr key={String(r.id)}>
+                      <td>
+                        {String(r.id)} · {String(r.title || "")}
+                      </td>
+                      <td>{String(r.tf || "—")}</td>
+                      <td>{money(r.net as number, { signed: true })}</td>
+                      <td>
+                        {r.drawdown == null
+                          ? "—"
+                          : pct(Number(r.drawdown) * 100, { signed: false })}
+                      </td>
+                      <td>
+                        {r.exposure == null
+                          ? "—"
+                          : pct(Number(r.exposure) * 100, { signed: false })}
+                      </td>
+                      <td>{money(r.costs as number)}</td>
+                      <td>{money(r.stress as number, { signed: true })}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <h4>Qué intenta cada línea</h4>
+            <ul style={{ fontSize: 13 }}>
+              {labHyps.map((h) => (
+                <li key={String(h.id)}>
+                  <strong>{String(h.id)}</strong> [{String(h.kind)}]: {String(h.what || h.title)}
+                </li>
+              ))}
+            </ul>
+            <div className="info-box" style={{ marginTop: 12 }}>
+              {String(lab?.adversarial_summary || "")}
+              <br />
+              <span className="muted">{(lab?.limitations as string[])?.[0]}</span>
+            </div>
+          </>
+        )}
       </section>
 
       <section className="panel" style={{ marginTop: 16 }}>

@@ -11,6 +11,8 @@ from ..ohlcv import fetch_klines
 from .backtest_u import run_etapa_u
 from .backtest_v import run_etapa_v
 from .center_y import research_center_y
+from .etapa_z.center_z import research_center_z
+from .etapa_z.run_z import run_etapa_z
 from .forensic_a import forensic_rounds
 from .history.backtest_w import run_etapa_w
 from .history.coverage import full_coverage_report
@@ -27,28 +29,39 @@ _BT_V_CACHE: dict[str, Any] | None = None
 _BT_W_CACHE: dict[str, Any] | None = None
 _DX_CACHE: dict[str, Any] | None = None
 _EY_CACHE: dict[str, Any] | None = None
+_EZ_CACHE: dict[str, Any] | None = None
 _BT_LOCK = asyncio.Lock()
 _HIST_LOCK = asyncio.Lock()
 
 
-def _load_exits_y_artifact() -> dict[str, Any] | None:
-    """Carga resultado Y persistido (sin re-ejecutar simulación)."""
+def _load_json_artifact(*candidates: str) -> dict[str, Any] | None:
     from pathlib import Path
+    import json
 
-    for p in (
-        Path("/artifacts/history/etapa_y_results.json"),
-        Path("data/market_history/etapa_y_results.json"),
-    ):
+    for raw in candidates:
+        p = Path(raw)
         try:
             if p.is_file() and p.stat().st_size > 100:
-                import json
-
                 d = json.loads(p.read_text(encoding="utf-8"))
                 if isinstance(d, dict) and d.get("available"):
                     return d
         except Exception:
             continue
     return None
+
+
+def _load_exits_y_artifact() -> dict[str, Any] | None:
+    return _load_json_artifact(
+        "/artifacts/history/etapa_y_results.json",
+        "data/market_history/etapa_y_results.json",
+    )
+
+
+def _load_etapa_z_artifact() -> dict[str, Any] | None:
+    return _load_json_artifact(
+        "/artifacts/history/etapa_z_results.json",
+        "data/market_history/etapa_z_results.json",
+    )
 
 
 @router.get("/improve")
@@ -135,18 +148,23 @@ async def research_center_api(
     run_backtest_w: bool = Query(False),
     run_diagnose_x: bool = Query(False),
     run_exits_y: bool = Query(False),
+    run_etapa_z: bool = Query(False),
 ):
-    """Centro de Investigación de Estrategias (Etapa V/W/X/Y)."""
+    """Centro de Investigación de Estrategias (Etapa V/W/X/Y/Z)."""
     from ..main import db, serial
 
-    global _BT_V_CACHE, _BT_W_CACHE, _DX_CACHE, _EY_CACHE
+    global _BT_V_CACHE, _BT_W_CACHE, _DX_CACHE, _EY_CACHE, _EZ_CACHE
     bt = _BT_V_CACHE
     btw = _BT_W_CACHE
     dx = _DX_CACHE
     ey = _EY_CACHE
+    ez = _EZ_CACHE
     if ey is None:
         ey = _load_exits_y_artifact()
         _EY_CACHE = ey
+    if ez is None:
+        ez = _load_etapa_z_artifact()
+        _EZ_CACHE = ez
     if run_backtest:
         async with _BT_LOCK:
             try:
@@ -206,16 +224,30 @@ async def research_center_api(
                     "detail": str(exc)[:200],
                     "claim": {"activate": False, "declare_profitable": False},
                 }
+    if run_etapa_z:
+        async with _BT_LOCK:
+            try:
+                _EZ_CACHE = await asyncio.wait_for(
+                    asyncio.to_thread(run_etapa_z, ["BTCUSDT", "ETHUSDT", "SOLUSDT"]),
+                    timeout=900,
+                )
+                ez = _EZ_CACHE
+            except Exception as exc:
+                ez = {
+                    "available": False,
+                    "error": type(exc).__name__,
+                    "detail": str(exc)[:200],
+                    "claim": {"activate": False, "verdict": "ERROR"},
+                }
     with db() as c:
-        return serial(
-            research_center_y(
-                c.execute,
-                backtest_v=bt,
-                backtest_w=btw,
-                diagnose_x=dx,
-                exits_y=ey,
-            )
+        base = research_center_y(
+            c.execute,
+            backtest_v=bt,
+            backtest_w=btw,
+            diagnose_x=dx,
+            exits_y=ey,
         )
+        return serial(research_center_z(base, ez))
 
 
 @router.get("/diagnose-x")
@@ -236,6 +268,16 @@ async def research_exits_y():
     async with _BT_LOCK:
         _EY_CACHE = await asyncio.to_thread(run_etapa_y, ["BTCUSDT", "ETHUSDT", "SOLUSDT"])
         return serial(_EY_CACHE)
+
+
+@router.get("/etapa-z")
+async def research_etapa_z():
+    from ..main import serial
+
+    global _EZ_CACHE
+    async with _BT_LOCK:
+        _EZ_CACHE = await asyncio.to_thread(run_etapa_z, ["BTCUSDT", "ETHUSDT", "SOLUSDT"])
+        return serial(_EZ_CACHE)
 
 
 @router.get("/history/coverage")
