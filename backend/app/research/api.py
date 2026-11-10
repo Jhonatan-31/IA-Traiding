@@ -10,11 +10,12 @@ from fastapi import APIRouter, Query
 from ..ohlcv import fetch_klines
 from .backtest_u import run_etapa_u
 from .backtest_v import run_etapa_v
-from .center_x import research_center_x
+from .center_y import research_center_y
 from .forensic_a import forensic_rounds
 from .history.backtest_w import run_etapa_w
 from .history.coverage import full_coverage_report
 from .history.diagnose_x import run_diagnose_x
+from .history.exits_y import run_etapa_y
 from .history.pipeline import run_expand, run_smoke, sync_coverage_to_db
 from .history.schema import ensure_history_schema
 from .improve import improve_report
@@ -25,8 +26,29 @@ _BT_CACHE: dict[str, Any] | None = None
 _BT_V_CACHE: dict[str, Any] | None = None
 _BT_W_CACHE: dict[str, Any] | None = None
 _DX_CACHE: dict[str, Any] | None = None
+_EY_CACHE: dict[str, Any] | None = None
 _BT_LOCK = asyncio.Lock()
 _HIST_LOCK = asyncio.Lock()
+
+
+def _load_exits_y_artifact() -> dict[str, Any] | None:
+    """Carga resultado Y persistido (sin re-ejecutar simulación)."""
+    from pathlib import Path
+
+    for p in (
+        Path("/artifacts/history/etapa_y_results.json"),
+        Path("data/market_history/etapa_y_results.json"),
+    ):
+        try:
+            if p.is_file() and p.stat().st_size > 100:
+                import json
+
+                d = json.loads(p.read_text(encoding="utf-8"))
+                if isinstance(d, dict) and d.get("available"):
+                    return d
+        except Exception:
+            continue
+    return None
 
 
 @router.get("/improve")
@@ -112,14 +134,19 @@ async def research_center_api(
     run_backtest: bool = Query(False),
     run_backtest_w: bool = Query(False),
     run_diagnose_x: bool = Query(False),
+    run_exits_y: bool = Query(False),
 ):
-    """Centro de Investigación de Estrategias (Etapa V/W/X)."""
+    """Centro de Investigación de Estrategias (Etapa V/W/X/Y)."""
     from ..main import db, serial
 
-    global _BT_V_CACHE, _BT_W_CACHE, _DX_CACHE
+    global _BT_V_CACHE, _BT_W_CACHE, _DX_CACHE, _EY_CACHE
     bt = _BT_V_CACHE
     btw = _BT_W_CACHE
     dx = _DX_CACHE
+    ey = _EY_CACHE
+    if ey is None:
+        ey = _load_exits_y_artifact()
+        _EY_CACHE = ey
     if run_backtest:
         async with _BT_LOCK:
             try:
@@ -164,9 +191,30 @@ async def research_center_api(
                     "detail": str(exc)[:200],
                     "claim": {"declare_profitable": False, "activate_strategy": False},
                 }
+    if run_exits_y:
+        async with _BT_LOCK:
+            try:
+                _EY_CACHE = await asyncio.wait_for(
+                    asyncio.to_thread(run_etapa_y, ["BTCUSDT", "ETHUSDT", "SOLUSDT"]),
+                    timeout=900,
+                )
+                ey = _EY_CACHE
+            except Exception as exc:
+                ey = {
+                    "available": False,
+                    "error": type(exc).__name__,
+                    "detail": str(exc)[:200],
+                    "claim": {"activate": False, "declare_profitable": False},
+                }
     with db() as c:
         return serial(
-            research_center_x(c.execute, backtest_v=bt, backtest_w=btw, diagnose_x=dx)
+            research_center_y(
+                c.execute,
+                backtest_v=bt,
+                backtest_w=btw,
+                diagnose_x=dx,
+                exits_y=ey,
+            )
         )
 
 
@@ -178,6 +226,16 @@ async def research_diagnose_x():
     async with _BT_LOCK:
         _DX_CACHE = await asyncio.to_thread(run_diagnose_x, ["BTCUSDT", "ETHUSDT", "SOLUSDT"])
         return serial(_DX_CACHE)
+
+
+@router.get("/exits-y")
+async def research_exits_y():
+    from ..main import serial
+
+    global _EY_CACHE
+    async with _BT_LOCK:
+        _EY_CACHE = await asyncio.to_thread(run_etapa_y, ["BTCUSDT", "ETHUSDT", "SOLUSDT"])
+        return serial(_EY_CACHE)
 
 
 @router.get("/history/coverage")
