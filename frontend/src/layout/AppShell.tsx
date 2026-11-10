@@ -17,6 +17,7 @@ const PRIMARY: NavItem[] = [
 ];
 
 const SECONDARY: NavItem[] = [
+  { to: "/investigacion", label: "Investigación", icon: "◫" },
   { to: "/analisis-ia", label: "Análisis IA", icon: "◇" },
   { to: "/seguridad", label: "Seguridad", icon: "⬡" },
   { to: "/sistema", label: "Estado del sistema", icon: "◌" },
@@ -36,6 +37,7 @@ const TITLE: Record<string, string> = {
   "/posiciones": "Mis posiciones",
   "/resultados": "Resultados",
   "/performance": "Resultados",
+  "/investigacion": "Centro de Investigación de Estrategias",
   "/analisis-ia": "Análisis de Inteligencia Artificial",
   "/ai": "Análisis de Inteligencia Artificial",
   "/seguridad": "Seguridad y protección",

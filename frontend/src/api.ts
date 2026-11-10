@@ -520,6 +520,13 @@ export const api = {
     getJson<Record<string, unknown>>(
       `/api/research/improve?run_backtest=${runBacktest ? "true" : "false"}`
     ),
+  researchCenter: (runBacktest = false) =>
+    getJson<Record<string, unknown>>(
+      `/api/research/center?run_backtest=${runBacktest ? "true" : "false"}`
+    ),
+  researchForensicA: () => getJson<Record<string, unknown>>("/api/research/forensic-a"),
+  researchBacktestV: (limit = 1000) =>
+    getJson<Record<string, unknown>>(`/api/research/backtest-v?limit=${limit}`),
   labStatus: () => getJson<Record<string, unknown>>("/api/lab/status"),
   labPause: async (token: string, reason = "dashboard_pause") => {
     const res = await fetch(`/api/lab/pause?reason=${encodeURIComponent(reason)}`, {
