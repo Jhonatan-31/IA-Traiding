@@ -34,7 +34,12 @@ function botUiState(bot: string, st: Record<string, unknown>, positions: number)
   label: string;
   variant: "ok" | "warn" | "danger" | "info" | "neutral";
 } {
-  if (bot === "STOPPED") return { label: "Detenido", variant: "warn" };
+  if (bot === "STOPPED") {
+    if (st.connection_ok === false) {
+      return { label: "DETENIDO — SIN DATOS (protección en riesgo)", variant: "danger" };
+    }
+    return { label: "DETENIDO — COMPRAS PAUSADAS", variant: "warn" };
+  }
   if (bot !== "RUNNING") return { label: "Revisando…", variant: "neutral" };
   if (st.connection_ok === false) return { label: "Problema de conexión", variant: "danger" };
   if (positions > 0) return { label: "Operando · protegiendo posiciones", variant: "ok" };
@@ -343,14 +348,21 @@ export default function DemoAutoPage() {
       <div className="bot-hero">
         <div className="bot-control">
           <div className="bot-status-line">
-            <StatusBadge variant={bot === "RUNNING" ? "ok" : "warn"} pulse={bot === "RUNNING"}>
-              {bot === "RUNNING" ? "En marcha" : "Detenido"}
+            <StatusBadge variant={ui.variant} pulse={bot === "RUNNING"}>
+              {ui.label}
             </StatusBadge>
             <StatusBadge variant="info">SIMULACIÓN</StatusBadge>
             <span className="muted" style={{ fontSize: 12 }}>
               Última evaluación: {when(st.last_eval_at as string)}
             </span>
           </div>
+          {bot === "STOPPED" && (
+            <div className="info-box" style={{ marginBottom: 10 }}>
+              {st.connection_ok === false
+                ? "El bot está detenido, pero los datos de mercado o el servicio no responden. No se puede afirmar que las posiciones estén protegidas hasta restablecer la conexión."
+                : "El bot no abrirá nuevas compras. Las posiciones existentes siguen bajo protección automática mientras los servicios estén funcionando."}
+            </div>
+          )}
           <p className="bot-narrative">{narrative}</p>
           <div className="bot-controls-row">
             <button

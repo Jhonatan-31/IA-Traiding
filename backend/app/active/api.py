@@ -10,6 +10,8 @@ from ..lab.auth import require_lab_token
 from ..ohlcv import fetch_klines
 from . import ACCOUNT_B, B_EXECUTION_AUTHORIZED, INITIAL_CASH, POLICY_B_VERSION
 from .control import start_bot, stop_bot
+from .diagnose import compare_ab, diagnose_holds, strategy_history
+from .economic_audit import full_economic_report
 from .policy_b import POLICY_DOC, human_reason
 from .policy_c import validation_report
 from .schema import ensure_active_schema
@@ -306,3 +308,79 @@ async def active_c_status():
 
     with db() as c:
         return serial(validation_report(c.execute))
+
+
+@router.get("/diagnose")
+async def active_diagnose(limit: int = Query(5000, ge=100, le=20000)):
+    """HOLD reasons A/B with correct denominators (unique cycle+symbol). Read-only."""
+    from ..main import db, serial
+    from ..demo.schema import ensure_demo_schema
+
+    with db() as c:
+        ensure_demo_schema(c.execute)
+        ensure_active_schema(c.execute)
+        return serial(diagnose_holds(c.execute, limit=limit))
+
+
+@router.get("/history")
+async def active_history(limit: int = Query(100, ge=1, le=500)):
+    """Real simulator trades/positions/rejects for A/B/C. No invented fills."""
+    from ..main import db, serial
+    from ..demo.schema import ensure_demo_schema
+
+    with db() as c:
+        ensure_demo_schema(c.execute)
+        ensure_active_schema(c.execute)
+        return serial(strategy_history(c.execute, limit=limit))
+
+
+@router.get("/compare")
+async def active_compare():
+    """Economic A/B comparison for equivalent observed windows. Does not declare a winner."""
+    from ..main import db, serial
+    from ..demo.schema import ensure_demo_schema
+
+    with db() as c:
+        ensure_demo_schema(c.execute)
+        ensure_active_schema(c.execute)
+        return serial(compare_ab(c.execute))
+
+
+@router.get("/economic")
+async def active_economic():
+    """Auditoría económica A + marco prospectivo A/B. Solo lectura; no inicia B."""
+    from ..main import db, serial
+
+    from ..demo.schema import ensure_demo_schema
+
+    # Best-effort live marks for open positions (unrealized)
+    marks: dict[str, float] = {}
+    with db() as c:
+        ensure_demo_schema(c.execute)
+        ensure_active_schema(c.execute)
+        pos = list(
+            c.execute(
+                "SELECT symbol FROM demo_positions WHERE account_id=%s",
+                ("demo_manual_control",),
+            )
+        )
+    if pos:
+        try:
+            async with httpx.AsyncClient(
+                timeout=10, headers={"User-Agent": "ResearchPaperBot/economic"}
+            ) as client:
+                for p in pos:
+                    try:
+                        k = await fetch_klines(client, p["symbol"], "1m", limit=3, use_cache=True)
+                        closed = [x for x in k["candles"] if x.get("is_closed", True)]
+                        if closed:
+                            marks[p["symbol"]] = float(closed[-1]["close"])
+                    except Exception:
+                        continue
+        except Exception:
+            pass
+
+    with db() as c:
+        ensure_demo_schema(c.execute)
+        ensure_active_schema(c.execute)
+        return serial(full_economic_report(c.execute, marks=marks))

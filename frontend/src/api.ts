@@ -511,6 +511,15 @@ export const api = {
     return res.json() as Promise<Record<string, unknown>>;
   },
   activeCStatus: () => getJson<Record<string, unknown>>("/api/active/c/status"),
+  activeDiagnose: () => getJson<Record<string, unknown>>("/api/active/diagnose"),
+  activeHistory: (limit = 80) =>
+    getJson<Record<string, unknown>>(`/api/active/history?limit=${limit}`),
+  activeCompare: () => getJson<Record<string, unknown>>("/api/active/compare"),
+  activeEconomic: () => getJson<Record<string, unknown>>("/api/active/economic"),
+  researchImprove: (runBacktest = false) =>
+    getJson<Record<string, unknown>>(
+      `/api/research/improve?run_backtest=${runBacktest ? "true" : "false"}`
+    ),
   labStatus: () => getJson<Record<string, unknown>>("/api/lab/status"),
   labPause: async (token: string, reason = "dashboard_pause") => {
     const res = await fetch(`/api/lab/pause?reason=${encodeURIComponent(reason)}`, {

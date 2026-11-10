@@ -695,6 +695,16 @@ table.data .tabular {
   margin-bottom: 16px;
 }
 
+.info-box {
+  background: color-mix(in srgb, var(--brand) 12%, transparent);
+  border: 1px solid color-mix(in srgb, var(--brand) 35%, transparent);
+  color: var(--text);
+  padding: 12px 14px;
+  border-radius: 10px;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
 .success-box {
   border: 1px solid rgba(23, 184, 144, 0.35);
   background: var(--buy-dim);

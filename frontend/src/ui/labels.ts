@@ -49,6 +49,28 @@ export const REASON_HINT: Record<string, string> = {
   demo_policy_buy: "Compra virtual según las reglas del Bot Demo.",
   stop_loss: "Venta por protección de pérdida.",
   take_profit: "Venta por objetivo de ganancia.",
+  hold_position: "Ya hay una posición abierta en este mercado.",
+  no_5m_trend: "No hay tendencia alcista clara en el marco de 5 minutos.",
+  no_ema_cross: "Aún no hay cruce alcista de medias en 1 minuto.",
+  vol_floor_reject: "El volumen era demasiado bajo (poca liquidez relativa).",
+  cost_filter_reject: "Los costos estimados eran altos frente a la volatilidad.",
+  rsi_out_of_band: "El impulso (RSI) no estaba en una zona favorable para comprar.",
+  atr_extreme: "La volatilidad es demasiado alta para esta política.",
+  cooldown: "Periodo de enfriamiento tras una operación reciente.",
+  max_entries_hour: "Se alcanzó el límite de compras por hora.",
+  indicators_incomplete: "Faltan datos de mercado para evaluar con seguridad.",
+};
+
+export const HOLD_CATEGORY_LABEL: Record<string, string> = {
+  open_position: "Ya existe una posición",
+  unfavorable_trend: "Tendencia no favorable",
+  insufficient_volatility: "Volatilidad insuficiente",
+  high_costs: "Costos demasiado elevados",
+  risk_exceeded: "Riesgo excedido",
+  signal_unconfirmed: "Señal no confirmada",
+  data_unavailable: "Datos no disponibles",
+  bot_stopped: "Bot detenido (sin compras nuevas)",
+  other: "Otro motivo",
 };
 
 export function accountLabel(id: string | null | undefined): string {

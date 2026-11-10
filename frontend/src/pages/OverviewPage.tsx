@@ -32,19 +32,23 @@ export default function OverviewPage() {
   const [demo, setDemo] = useState<Record<string, unknown> | null>(null);
   const [fills, setFills] = useState<Array<Record<string, unknown>>>([]);
   const [decisions, setDecisions] = useState<Array<Record<string, unknown>>>([]);
+  const [economic, setEconomic] = useState<Record<string, unknown> | null>(null);
+  const [improve, setImprove] = useState<Record<string, unknown> | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
   async function load() {
     try {
       setError(null);
-      const [o, p, s, d, f, dec] = await Promise.all([
+      const [o, p, s, d, f, dec, eco, imp] = await Promise.all([
         api.overview(),
         api.positions(),
         api.scans(),
         api.demoStatus().catch(() => null),
         api.demoFills(30).catch(() => []),
         api.demoDecisions(40).catch(() => []),
+        api.activeEconomic().catch(() => null),
+        api.researchImprove(false).catch(() => null),
       ]);
       setOverview(o);
       setPositions(p);
@@ -52,6 +56,8 @@ export default function OverviewPage() {
       setDemo(d);
       setFills(f || []);
       setDecisions(dec || []);
+      setEconomic(eco);
+      setImprove(imp);
     } catch (e) {
       setError(
         e instanceof Error
@@ -197,6 +203,16 @@ export default function OverviewPage() {
 
       {error && <div className="error-box">{error}</div>}
 
+      <BotHealthSection economic={economic} />
+      <ImproveBotSection improve={improve} onRefreshBacktest={async () => {
+        try {
+          const imp = await api.researchImprove(true);
+          setImprove(imp);
+        } catch {
+          setError("No pudimos calcular las pruebas históricas de mejora.");
+        }
+      }} />
+
       <p className="muted" style={{ marginBottom: 12, fontSize: 13 }}>
         Mostrando: <strong style={{ color: "var(--text)" }}>{metrics.label}</strong>. Las cuentas no se
         suman entre sí.
@@ -317,5 +333,241 @@ export default function OverviewPage() {
         ) : null}
       </div>
     </div>
+  );
+}
+
+function ImproveBotSection({
+  improve,
+  onRefreshBacktest,
+}: {
+  improve: Record<string, unknown> | null;
+  onRefreshBacktest: () => Promise<void>;
+}) {
+  const dash = (improve?.dashboard || null) as Record<string, unknown> | null;
+  const ai = (improve?.ai || null) as Record<string, unknown> | null;
+  const bt = (improve?.backtest || null) as Record<string, unknown> | null;
+  const [busyBt, setBusyBt] = useState(false);
+
+  if (!dash) {
+    return (
+      <section className="panel" style={{ marginBottom: 16 }}>
+        <div className="panel-title">
+          <h3 style={{ margin: 0 }}>¿Cómo podemos mejorar mi bot?</h3>
+        </div>
+        <p className="muted">Preparando el diagnóstico de mejora…</p>
+      </section>
+    );
+  }
+
+  const causes = (dash.main_causes as Array<Record<string, unknown>>) || [];
+  const byCrypto = (dash.by_crypto as Array<Record<string, unknown>>) || [];
+  const experiments = (dash.experiments as Array<Record<string, unknown>>) || [];
+  const oos = ((bt?.oos_rows as Array<Record<string, unknown>>) || []);
+  const costs = (dash.costs || {}) as Record<string, unknown>;
+
+  return (
+    <section className="panel" style={{ marginBottom: 16 }}>
+      <div className="panel-title">
+        <div>
+          <h3 style={{ margin: 0 }}>¿Cómo podemos mejorar mi bot?</h3>
+          <p className="muted" style={{ margin: "4px 0 0", fontSize: 12 }}>
+            Investigación Etapa U · A y B permanecen detenidos · sin dinero real
+          </p>
+        </div>
+        <button
+          type="button"
+          className="btn"
+          disabled={busyBt}
+          onClick={() => {
+            setBusyBt(true);
+            void onRefreshBacktest().finally(() => setBusyBt(false));
+          }}
+        >
+          {busyBt ? "Calculando…" : "Actualizar pruebas históricas"}
+        </button>
+      </div>
+
+      <p style={{ fontSize: 14, lineHeight: 1.5 }}>{String(dash.why_lost || "")}</p>
+
+      <div className="metric-grid" style={{ gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+        <div>
+          <h4 style={{ marginBottom: 8 }}>Principales causas</h4>
+          <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13, lineHeight: 1.5 }}>
+            {causes.map((c) => (
+              <li key={String(c.motivo)}>
+                <strong>{String(c.motivo)}</strong>: {money(c.impacto as number, { signed: true })}
+              </li>
+            ))}
+          </ul>
+          <p className="muted" style={{ fontSize: 12, marginTop: 8 }}>
+            Comisiones {money(costs.comisiones as number)} · Deslizamiento{" "}
+            {money(costs.deslizamiento as number)}
+          </p>
+        </div>
+        <div>
+          <h4 style={{ marginBottom: 8 }}>Resultado por criptomoneda</h4>
+          <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13, lineHeight: 1.5 }}>
+            {byCrypto.map((c) => (
+              <li key={String(c.name)}>
+                <strong>{String(c.name)}</strong>: {money(c.resultado as number, { signed: true })} ·{" "}
+                {Number(c.cerradas || 0)} cerradas
+              </li>
+            ))}
+          </ul>
+        </div>
+      </div>
+
+      <h4 style={{ marginTop: 16 }}>Estrategias experimentales en estudio</h4>
+      <ul style={{ paddingLeft: 18, fontSize: 13, lineHeight: 1.5 }}>
+        {experiments.map((e) => (
+          <li key={String(e.nombre)} style={{ marginBottom: 8 }}>
+            <strong>{String(e.nombre)}</strong> — {String(e.que_busca)}{" "}
+            <span className="muted">({String(e.evidencia)})</span>
+          </li>
+        ))}
+      </ul>
+
+      {oos.length > 0 && (
+        <>
+          <h4>Comparación fuera de muestra (descriptiva)</h4>
+          <p className="muted" style={{ fontSize: 12 }}>
+            {String((bt?.claim as Record<string, unknown> | null)?.reason || dash.comparison_note || "")}
+          </p>
+          <div className="table-wrap">
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Variante</th>
+                  <th>Resultado neto</th>
+                  <th>Compras</th>
+                  <th>Acierto</th>
+                  <th>Factor beneficio</th>
+                </tr>
+              </thead>
+              <tbody>
+                {oos.map((r) => (
+                  <tr key={String(r.id)}>
+                    <td>{String(r.name || r.id)}</td>
+                    <td>{money(r.net_oos as number, { signed: true })}</td>
+                    <td>{Number(r.trades || 0)}</td>
+                    <td>
+                      {r.win_rate == null ? "—" : pct(Number(r.win_rate) * 100, { signed: false })}
+                    </td>
+                    <td>{r.profit_factor == null ? "—" : Number(r.profit_factor).toFixed(2)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      )}
+
+      <div className="info-box" style={{ marginTop: 12 }}>
+        <strong>IA:</strong> {String(ai?.human || "Sin datos.")} Predicciones resueltas:{" "}
+        {Number(ai?.resolved || 0)} · Con calibración: {Number(ai?.with_calibration || 0)}.
+        PAPER_AI deshabilitado.
+      </div>
+      <p className="muted" style={{ fontSize: 12, marginTop: 8 }}>
+        No se declara ninguna variante rentable con la evidencia actual. A y B siguen detenidos.
+      </p>
+    </section>
+  );
+}
+
+function BotHealthSection({ economic }: { economic: Record<string, unknown> | null }) {
+  const a = (economic?.A || null) as Record<string, unknown> | null;
+  const dash = (a?.dashboard || null) as Record<string, unknown> | null;
+  const ab = (economic?.ab_prospective || null) as Record<string, unknown> | null;
+  if (!dash) {
+    return (
+      <section className="panel" style={{ marginBottom: 16 }}>
+        <div className="panel-title">
+          <h3 style={{ margin: 0 }}>¿Cómo le está yendo a mi bot?</h3>
+        </div>
+        <p className="muted">Cargando la auditoría económica del Bot Demo…</p>
+      </section>
+    );
+  }
+  const byCrypto = (dash.by_crypto as Array<Record<string, unknown>>) || [];
+  const lossReasons = (dash.main_loss_reasons as Array<Record<string, unknown>>) || [];
+  const tone = pnlTone(dash.net as number);
+  return (
+    <section className="panel" style={{ marginBottom: 16 }}>
+      <div className="panel-title">
+        <div>
+          <h3 style={{ margin: 0 }}>¿Cómo le está yendo a mi bot?</h3>
+          <p className="muted" style={{ margin: "4px 0 0", fontSize: 12 }}>
+            Auditoría del Bot Demo (Conservadora). Dinero virtual · sin órdenes reales.
+          </p>
+        </div>
+        <Link to="/estrategias" className="btn">
+          Ver estrategias
+        </Link>
+      </div>
+
+      <div className="metric-grid">
+        <MetricCard label="Dinero virtual inicial" value={money(dash.initial as number)} />
+        <MetricCard label="Valor actual" value={money(dash.current_value as number)} tone="brand" />
+        <MetricCard
+          label="Ganancia o pérdida neta"
+          value={money(dash.net as number, { signed: true })}
+          tone={tone === "pos" ? "pos" : tone === "neg" ? "neg" : "default"}
+        />
+        <MetricCard label="Compras realizadas" value={Number(dash.buys || 0)} />
+        <MetricCard label="Ventas realizadas" value={Number(dash.sells || 0)} />
+        <MetricCard
+          label="Operaciones ganadoras / perdedoras"
+          value={`${Number(dash.wins || 0)} / ${Number(dash.losses || 0)}`}
+          hint="Solo operaciones completamente cerradas. Las compras abiertas no cuentan como ganadoras."
+        />
+        <MetricCard label="Comisiones" value={money(dash.fees as number)} hint={METRIC_HELP.fees} />
+      </div>
+
+      <p style={{ fontSize: 14, lineHeight: 1.5, marginTop: 8 }}>
+        {String(dash.summary_text || "")}
+      </p>
+
+      <div className="metric-grid" style={{ gridTemplateColumns: "1fr 1fr", gap: 16, marginTop: 8 }}>
+        <div>
+          <h4 style={{ marginBottom: 8 }}>Resultado por criptomoneda</h4>
+          {byCrypto.length === 0 ? (
+            <p className="muted">Sin operaciones cerradas todavía.</p>
+          ) : (
+            <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13, lineHeight: 1.5 }}>
+              {byCrypto.map((c) => (
+                <li key={String(c.name)}>
+                  <strong>{String(c.name)}</strong>: {money(c.resultado as number, { signed: true })}{" "}
+                  · {Number(c.cerradas || 0)} cerradas ({Number(c.ganadoras || 0)} ganadoras /{" "}
+                  {Number(c.perdedoras || 0)} perdedoras)
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+        <div>
+          <h4 style={{ marginBottom: 8 }}>Principales motivos de pérdidas</h4>
+          {lossReasons.length === 0 ? (
+            <p className="muted">No hay pérdidas cerradas registradas.</p>
+          ) : (
+            <ul style={{ margin: 0, paddingLeft: 18, fontSize: 13, lineHeight: 1.5 }}>
+              {lossReasons.map((r) => (
+                <li key={String(r.motivo)}>
+                  {String(r.motivo)}: {money(r.resultado as number, { signed: true })} (
+                  {Number(r.operaciones || 0)} operaciones)
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+      </div>
+
+      {ab && (
+        <p className="muted" style={{ fontSize: 12, marginTop: 12 }}>
+          Comparación justa con Trading Activo: B sigue{" "}
+          <strong style={{ color: "var(--text)" }}>{String(ab.b_status || "STOPPED")}</strong>. No se
+          inicia sola. Cuando la actives, se usará un mismo punto de partida prospectivo.
+        </p>
+      )}
+    </section>
   );
 }
