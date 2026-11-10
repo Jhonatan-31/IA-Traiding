@@ -11,10 +11,10 @@ export default function ResearchCenterPage() {
   const [busy, setBusy] = useState(false);
   const [histMsg, setHistMsg] = useState<string | null>(null);
 
-  const load = useCallback(async (runBt = false, runBtW = false) => {
+  const load = useCallback(async (runBt = false, runBtW = false, runDx = false) => {
     try {
       setBusy(true);
-      const r = await api.researchCenter(runBt, runBtW);
+      const r = await api.researchCenter(runBt, runBtW, runDx);
       setData(r);
       setError(null);
     } catch {
@@ -25,7 +25,7 @@ export default function ResearchCenterPage() {
   }, []);
 
   useEffect(() => {
-    void load(false, false);
+    void load(false, false, false);
   }, [load]);
 
   const forensic = (data?.forensic_summary || null) as Record<string, unknown> | null;
@@ -39,6 +39,11 @@ export default function ResearchCenterPage() {
     | undefined;
   const disk = (history?.disk || null) as Record<string, number> | null;
   const lossByExit = (forensic?.loss_by_exit || {}) as Record<string, number>;
+  const when = (data?.when_to_trade || null) as Record<string, unknown> | null;
+  const lossesReg = (when?.losses_by_regime as Array<Record<string, unknown>>) || [];
+  const gainsReg = (when?.gains_by_regime_exploratory as Array<Record<string, unknown>>) || [];
+  const hyps = (when?.hypotheses as Array<Record<string, unknown>>) || [];
+  const regimePresence = (when?.regime_presence || {}) as Record<string, number>;
 
   const runSmoke = async () => {
     try {
@@ -56,41 +61,24 @@ export default function ResearchCenterPage() {
     }
   };
 
-  const runExpand = async () => {
-    try {
-      setBusy(true);
-      setHistMsg("Ampliando historial 12 meses (puede tardar varios minutos)…");
-      const r = await api.researchHistoryExpand();
-      setHistMsg(`Expand: ${Number(r.ingested_ok || 0)}/${Number(r.n_jobs || 0)} meses ingeridos`);
-      await load(false, false);
-    } catch {
-      setHistMsg("Error ampliando historial.");
-    } finally {
-      setBusy(false);
-    }
-  };
-
   return (
     <div>
       <PageHeader
-        eyebrow="Etapa W"
+        eyebrow="Etapa X"
         title="Centro de Investigación de Estrategias"
-        subtitle="Historial Binance Vision + evaluación cuantitativa. A y B detenidos. Más historial no implica rentabilidad."
+        subtitle="Diagnóstico por régimen con historial Vision. A y B detenidos. Segmentos positivos no autorizan activar."
         actions={
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             <button type="button" className="btn" disabled={busy} onClick={() => void runSmoke()}>
               Smoke 1 mes
             </button>
-            <button type="button" className="btn" disabled={busy} onClick={() => void runExpand()}>
-              Ampliar 12 meses
-            </button>
             <button
               type="button"
               className="btn btn-primary"
               disabled={busy}
-              onClick={() => void load(false, true)}
+              onClick={() => void load(false, false, true)}
             >
-              {busy ? "Calculando…" : "Backtest historial W"}
+              {busy ? "Calculando…" : "Diagnóstico por régimen"}
             </button>
           </div>
         }
@@ -159,6 +147,96 @@ export default function ResearchCenterPage() {
             );
           })}
         </div>
+      </section>
+
+      <section className="panel" style={{ marginTop: 16 }}>
+        <div className="panel-title">
+          <h3 style={{ margin: 0 }}>¿Cuándo tiene sentido operar?</h3>
+          <StatusBadge variant={when?.available ? "ok" : "neutral"}>
+            {when?.available ? `Evidencia: ${String(when.evidence_level)}` : "Pendiente"}
+          </StatusBadge>
+        </div>
+        <p style={{ fontSize: 13, lineHeight: 1.45 }}>
+          Expectativa en USDT por operación (capital simulado 1.000 USDT). Mínimo 30 operaciones por
+          segmento. Holdout de la etapa anterior: consumido — no se reutiliza para elegir ganadores.
+        </p>
+        {!Boolean(when?.available) && (
+          <p className="muted">Pulsa «Diagnóstico por régimen» (usa el historial local de 12 meses).</p>
+        )}
+        {Boolean(when?.available) && (
+          <>
+            <h4>Presencia de regímenes (barras BTC 1h)</h4>
+            <ul style={{ fontSize: 13, columns: 2, gap: 8 }}>
+              {Object.entries(regimePresence)
+                .sort((a, b) => Number(b[1]) - Number(a[1]))
+                .slice(0, 8)
+                .map(([k, v]) => (
+                  <li key={k}>
+                    {k}: {v}
+                  </li>
+                ))}
+            </ul>
+            <h4>Pérdidas netas por régimen (N≥30)</h4>
+            <div className="metric-grid" style={{ gridTemplateColumns: "repeat(auto-fit,minmax(240px,1fr))" }}>
+              {lossesReg.map((r) => (
+                <div key={`${r.strategy}-${r.regime}`} className="panel" style={{ margin: 0 }}>
+                  <strong>
+                    {String(r.strategy)} · {String(r.regime)}
+                  </strong>
+                  <div className="metric-grid">
+                    <MetricCard label="Ops" value={Number(r.n || 0)} />
+                    <MetricCard
+                      label="Expectativa"
+                      value={money(r.expectancy_usdt as number, { signed: true })}
+                    />
+                    <MetricCard
+                      label="P/L neto"
+                      value={money(r.net_pnl_usdt as number, { signed: true })}
+                    />
+                  </div>
+                </div>
+              ))}
+              {lossesReg.length === 0 && <p className="muted">Sin segmentos perdedores con N suficiente.</p>}
+            </div>
+            <h4>Ganancias exploratorias (no promoción)</h4>
+            <div className="metric-grid" style={{ gridTemplateColumns: "repeat(auto-fit,minmax(240px,1fr))" }}>
+              {gainsReg.map((r) => (
+                <div key={`g-${r.strategy}-${r.regime}`} className="panel" style={{ margin: 0 }}>
+                  <strong>
+                    {String(r.strategy)} · {String(r.regime)}
+                  </strong>
+                  <div className="metric-grid">
+                    <MetricCard label="Ops" value={Number(r.n || 0)} />
+                    <MetricCard
+                      label="Expectativa"
+                      value={money(r.expectancy_usdt as number, { signed: true })}
+                    />
+                  </div>
+                  <p className="muted" style={{ fontSize: 12 }}>
+                    Exploratorio — puede ser casualidad / selección.
+                  </p>
+                </div>
+              ))}
+              {gainsReg.length === 0 && (
+                <p className="muted">Ningún segmento con expectativa positiva y N≥30.</p>
+              )}
+            </div>
+            <h4>Hipótesis predefinidas</h4>
+            <ul style={{ fontSize: 13 }}>
+              {hyps.map((h) => (
+                <li key={String(h.id)}>
+                  <strong>{String(h.id)}</strong> [{String(h.status)}]: {String(h.text)} —{" "}
+                  {String(h.detail)}
+                </li>
+              ))}
+            </ul>
+            <div className="info-box" style={{ marginTop: 12 }}>
+              {String((when?.claim as Record<string, unknown> | null)?.reason || "")}
+              <br />
+              <span className="muted">{(when?.limitations as string[])?.[0]}</span>
+            </div>
+          </>
+        )}
       </section>
 
       <section className="panel" style={{ marginTop: 16 }}>

@@ -520,10 +520,11 @@ export const api = {
     getJson<Record<string, unknown>>(
       `/api/research/improve?run_backtest=${runBacktest ? "true" : "false"}`
     ),
-  researchCenter: (runBacktest = false, runBacktestW = false) =>
+  researchCenter: (runBacktest = false, runBacktestW = false, runDiagnoseX = false) =>
     getJson<Record<string, unknown>>(
-      `/api/research/center?run_backtest=${runBacktest ? "true" : "false"}&run_backtest_w=${runBacktestW ? "true" : "false"}`
+      `/api/research/center?run_backtest=${runBacktest ? "true" : "false"}&run_backtest_w=${runBacktestW ? "true" : "false"}&run_diagnose_x=${runDiagnoseX ? "true" : "false"}`
     ),
+  researchDiagnoseX: () => getJson<Record<string, unknown>>("/api/research/diagnose-x"),
   researchForensicA: () => getJson<Record<string, unknown>>("/api/research/forensic-a"),
   researchBacktestV: (limit = 1000) =>
     getJson<Record<string, unknown>>(`/api/research/backtest-v?limit=${limit}`),
