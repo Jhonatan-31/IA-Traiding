@@ -520,13 +520,29 @@ export const api = {
     getJson<Record<string, unknown>>(
       `/api/research/improve?run_backtest=${runBacktest ? "true" : "false"}`
     ),
-  researchCenter: (runBacktest = false) =>
+  researchCenter: (runBacktest = false, runBacktestW = false) =>
     getJson<Record<string, unknown>>(
-      `/api/research/center?run_backtest=${runBacktest ? "true" : "false"}`
+      `/api/research/center?run_backtest=${runBacktest ? "true" : "false"}&run_backtest_w=${runBacktestW ? "true" : "false"}`
     ),
   researchForensicA: () => getJson<Record<string, unknown>>("/api/research/forensic-a"),
   researchBacktestV: (limit = 1000) =>
     getJson<Record<string, unknown>>(`/api/research/backtest-v?limit=${limit}`),
+  researchHistoryCoverage: () =>
+    getJson<Record<string, unknown>>("/api/research/history/coverage"),
+  researchHistorySmoke: async () => {
+    const res = await fetch("/api/research/history/smoke", { method: "POST" });
+    if (!res.ok) throw new Error(`history smoke → HTTP ${res.status}`);
+    return res.json() as Promise<Record<string, unknown>>;
+  },
+  researchHistoryExpand: async (start = "2024-11", end = "2025-10") => {
+    const res = await fetch(
+      `/api/research/history/expand?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`,
+      { method: "POST" }
+    );
+    if (!res.ok) throw new Error(`history expand → HTTP ${res.status}`);
+    return res.json() as Promise<Record<string, unknown>>;
+  },
+  researchBacktestW: () => getJson<Record<string, unknown>>("/api/research/backtest-w"),
   labStatus: () => getJson<Record<string, unknown>>("/api/lab/status"),
   labPause: async (token: string, reason = "dashboard_pause") => {
     const res = await fetch(`/api/lab/pause?reason=${encodeURIComponent(reason)}`, {

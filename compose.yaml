@@ -19,9 +19,11 @@ services:
     environment:
       DATABASE_URL: postgresql://paper:${DB_PASSWORD:?Set DB_PASSWORD}@db:5432/paper
       ML_ARTIFACT_DIR: /artifacts
+      MARKET_HISTORY_DIR: /artifacts/history
       LAB_CONTROL_TOKEN: ${LAB_CONTROL_TOKEN:?Set LAB_CONTROL_TOKEN}
     volumes:
       - ml_artifacts:/artifacts
+      - ./data/market_history:/artifacts/history
     depends_on:
       db:
         condition: service_healthy

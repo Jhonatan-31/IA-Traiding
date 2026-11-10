@@ -1,4 +1,4 @@
-"""API investigación Etapa U/V — solo lectura + backtests en memoria."""
+"""API investigación Etapa U/V/W — lectura + backtests + historial Vision."""
 from __future__ import annotations
 
 import asyncio
@@ -10,15 +10,21 @@ from fastapi import APIRouter, Query
 from ..ohlcv import fetch_klines
 from .backtest_u import run_etapa_u
 from .backtest_v import run_etapa_v
-from .center_v import research_center
+from .center_w import research_center_w
 from .forensic_a import forensic_rounds
+from .history.backtest_w import run_etapa_w
+from .history.coverage import full_coverage_report
+from .history.pipeline import run_expand, run_smoke, sync_coverage_to_db
+from .history.schema import ensure_history_schema
 from .improve import improve_report
 
 router = APIRouter(prefix="/api/research", tags=["research"])
 
 _BT_CACHE: dict[str, Any] | None = None
 _BT_V_CACHE: dict[str, Any] | None = None
+_BT_W_CACHE: dict[str, Any] | None = None
 _BT_LOCK = asyncio.Lock()
+_HIST_LOCK = asyncio.Lock()
 
 
 @router.get("/improve")
@@ -100,12 +106,16 @@ async def research_backtest_v(limit: int = Query(1000, ge=300, le=1000)):
 
 
 @router.get("/center")
-async def research_center_api(run_backtest: bool = Query(False)):
-    """Centro de Investigación de Estrategias (Etapa V)."""
+async def research_center_api(
+    run_backtest: bool = Query(False),
+    run_backtest_w: bool = Query(False),
+):
+    """Centro de Investigación de Estrategias (Etapa V/W)."""
     from ..main import db, serial
 
-    global _BT_V_CACHE
+    global _BT_V_CACHE, _BT_W_CACHE
     bt = _BT_V_CACHE
+    btw = _BT_W_CACHE
     if run_backtest:
         async with _BT_LOCK:
             try:
@@ -120,5 +130,73 @@ async def research_center_api(run_backtest: bool = Query(False)):
                     "detail": str(exc)[:200],
                     "claim": {"declare_winner": False, "declare_profitable": False},
                 }
+    if run_backtest_w:
+        async with _BT_LOCK:
+            try:
+                _BT_W_CACHE = await asyncio.wait_for(
+                    asyncio.to_thread(run_etapa_w, ["BTCUSDT", "ETHUSDT", "SOLUSDT"]),
+                    timeout=600,
+                )
+                btw = _BT_W_CACHE
+            except Exception as exc:
+                btw = {
+                    "available": False,
+                    "error": type(exc).__name__,
+                    "detail": str(exc)[:200],
+                    "claim": {"declare_winner": False, "declare_profitable": False},
+                }
     with db() as c:
-        return serial(research_center(c.execute, backtest_v=bt))
+        return serial(research_center_w(c.execute, backtest_v=bt, backtest_w=btw))
+
+
+@router.get("/history/coverage")
+async def research_history_coverage():
+    from ..main import db, serial
+
+    with db() as c:
+        ensure_history_schema(c.execute)
+        sync_coverage_to_db(c.execute)
+    return serial(full_coverage_report())
+
+
+@router.post("/history/smoke")
+async def research_history_smoke():
+    """Descarga+valida 1 mes BTCUSDT. No toca carteras."""
+    from ..main import db, serial
+
+    async with _HIST_LOCK:
+        with db() as c:
+            ensure_history_schema(c.execute)
+            out = await run_smoke(execute=c.execute)
+            sync_coverage_to_db(c.execute)
+            return serial(out)
+
+
+@router.post("/history/expand")
+async def research_history_expand(
+    start: str = Query("2024-11"),
+    end: str = Query("2025-10"),
+):
+    """Amplía historial ~12m. Pesado; no bloquea runners (lock propio)."""
+    from ..main import db, serial
+
+    def _parse(ym: str) -> tuple[int, int]:
+        y, m = ym.split("-")
+        return int(y), int(m)
+
+    async with _HIST_LOCK:
+        with db() as c:
+            ensure_history_schema(c.execute)
+            out = await run_expand(start=_parse(start), end=_parse(end), execute=c.execute)
+            sync_coverage_to_db(c.execute)
+            return serial(out)
+
+
+@router.get("/backtest-w")
+async def research_backtest_w():
+    from ..main import serial
+
+    global _BT_W_CACHE
+    async with _BT_LOCK:
+        _BT_W_CACHE = await asyncio.to_thread(run_etapa_w, ["BTCUSDT", "ETHUSDT", "SOLUSDT"])
+        return serial(_BT_W_CACHE)

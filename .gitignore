@@ -36,3 +36,8 @@ node_modules/
 dist/
 frontend/node_modules/
 frontend/dist/
+
+# Research market history (large binaries)
+data/market_history/**
+!data/market_history/.gitkeep
+
