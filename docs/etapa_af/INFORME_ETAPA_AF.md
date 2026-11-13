@@ -2,7 +2,7 @@
 
 **Fecha:** 2026-11-13  
 **HEAD base AE:** `35ed6b1` / `a079f8a`  
-**Commit AF:** (ver tag `checkpoint-etapa-af`; incluye sampler background + nginx DNS dinámico)  
+**Commit AF:** `fa0df59` (tag `checkpoint-etapa-af`; sampler background + nginx DNS dinámico)  
 **Checkpoint previo:** `checkpoint-etapa-af-pre-20261113_115320`  
 **Backup local:** `backups/paper_pre_etapa_af_20261113_115320.dump`  
 **Backup EBZ verificado:** `/srv/apps/ia-bot-trading/backups/paper_ebz_20261113_165854.dump` (167714 bytes)  
