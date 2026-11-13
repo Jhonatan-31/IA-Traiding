@@ -19,11 +19,12 @@ export default function ResearchCenterPage() {
       runEy = false,
       runEz = false,
       runEaa = false,
-      runEab = false
+      runEab = false,
+      runEac = false
     ) => {
       try {
         setBusy(true);
-        const r = await api.researchCenter(runBt, runBtW, runDx, runEy, runEz, runEaa, runEab);
+        const r = await api.researchCenter(runBt, runBtW, runDx, runEy, runEz, runEaa, runEab, runEac);
         setData(r);
         setError(null);
       } catch {
@@ -36,7 +37,7 @@ export default function ResearchCenterPage() {
   );
 
   useEffect(() => {
-    void load(false, false, false, false, false, false, false);
+    void load(false, false, false, false, false, false, false, false);
   }, [load]);
 
   const forensic = (data?.forensic_summary || null) as Record<string, unknown> | null;
@@ -71,6 +72,10 @@ export default function ResearchCenterPage() {
   const vr = (data?.value_vs_risk || null) as Record<string, unknown> | null;
   const po = (data?.prospect_observation || null) as Record<string, unknown> | null;
   const vrLabels = (vr?.labels || {}) as Record<string, string>;
+  const sa = (data?.system_audit || null) as Record<string, unknown> | null;
+  const adv = (data?.d28h5_advantage || null) as Record<string, unknown> | null;
+  const advLabels = (adv?.labels || {}) as Record<string, string>;
+  const saVerdicts = (sa?.verdicts || {}) as Record<string, string>;
 
   const runSmoke = async () => {
     try {
@@ -91,9 +96,9 @@ export default function ResearchCenterPage() {
   return (
     <div>
       <PageHeader
-        eyebrow="Etapa AB"
+        eyebrow="Etapa AC"
         title="Centro de Investigación de Estrategias"
-        subtitle="Atribución económica y observación preparada. A y B detenidos. Sin activación."
+        subtitle="Auditoría institucional del sistema. A y B detenidos. Sin activación."
         actions={
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             <button type="button" className="btn" disabled={busy} onClick={() => void runSmoke()}>
@@ -103,17 +108,17 @@ export default function ResearchCenterPage() {
               type="button"
               className="btn"
               disabled={busy}
-              onClick={() => void load(false, false, false, false, false, true, false)}
+              onClick={() => void load(false, false, false, false, false, false, true, false)}
             >
-              Validación AA
+              Atribución AB
             </button>
             <button
               type="button"
               className="btn btn-primary"
               disabled={busy}
-              onClick={() => void load(false, false, false, false, false, false, true)}
+              onClick={() => void load(false, false, false, false, false, false, false, true)}
             >
-              {busy ? "Analizando…" : "Atribución económica AB"}
+              {busy ? "Auditando…" : "Auditoría profesional AC"}
             </button>
           </div>
         }
@@ -127,6 +132,72 @@ export default function ResearchCenterPage() {
       )}
 
       <section className="panel">
+        <div className="panel-title">
+          <h3 style={{ margin: 0 }}>Auditoría profesional del sistema</h3>
+          <StatusBadge variant={Boolean(sa?.available) ? "warn" : "neutral"}>
+            {Boolean(sa?.f01_critical_now) ? "CRÍTICO" : Boolean(sa?.available) ? "Auditado" : "Pendiente"}
+          </StatusBadge>
+        </div>
+        {!Boolean(sa?.available) && (
+          <p className="muted">Pulsa «Auditoría profesional AC».</p>
+        )}
+        {Boolean(sa?.available) && (
+          <>
+            <div className="metric-grid">
+              {Object.entries(saVerdicts).slice(0, 8).map(([k, v]) => (
+                <MetricCard key={k} label={k} value={String(v)} />
+              ))}
+            </div>
+            <p style={{ fontSize: 13 }}>
+              Runners caídos:{" "}
+              {((sa?.runners_down as string[]) || []).length
+                ? ((sa?.runners_down as string[]) || []).join(", ")
+                : "ninguno detectado"}
+              {" · "}Hallazgos: {Number(sa?.findings_n || 0)} · Prospect:{" "}
+              {String(sa?.prospect_status || "—")}
+            </p>
+            <ul style={{ fontSize: 12 }}>
+              {((sa?.top_findings as Array<Record<string, unknown>>) || []).map((f) => (
+                <li key={String(f.id)}>
+                  [{String(f.priority)}] {String(f.id)} — {String(f.title)}
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+      </section>
+
+      <section className="panel" style={{ marginTop: 16 }}>
+        <div className="panel-title">
+          <h3 style={{ margin: 0 }}>¿De dónde viene la ventaja de D28H5?</h3>
+          <StatusBadge variant="warn">{String(adv?.verdict || "—")}</StatusBadge>
+        </div>
+        <p className="muted" style={{ fontSize: 12 }}>
+          {advLabels.holdout || "Holdout AA consumido"} · no es ganancia absoluta
+        </p>
+        {Boolean(adv?.available) && (
+          <>
+            <div className="metric-grid">
+              <MetricCard label="D28H5" value={String(adv?.d28h5_net ?? "—")} />
+              <MetricCard label="FIXED-55" value={String(adv?.fixed55_net ?? "—")} />
+              <MetricCard label="BH-EQ" value={String(adv?.bh_eq_net ?? "—")} />
+              <MetricCard label="Efectivo" value={String(adv?.cash_net ?? "—")} />
+              <MetricCard label="Δ FIXED-55" value={String(adv?.diff_vs_fixed55 ?? "—")} />
+              <MetricCard label="Mercado" value={String(adv?.market_component ?? "—")} />
+              <MetricCard label="Exposición" value={String(adv?.exposure_component ?? "—")} />
+              <MetricCard label="Activo" value={String(adv?.active_component ?? "—")} />
+              <MetricCard label="Costos" value={String(adv?.costs_total ?? "—")} />
+            </div>
+            <ul style={{ fontSize: 12 }}>
+              {((adv?.limitations as string[]) || []).map((w) => (
+                <li key={w}>{w}</li>
+              ))}
+            </ul>
+          </>
+        )}
+      </section>
+
+      <section className="panel" style={{ marginTop: 16 }}>
         <div className="panel-title">
           <h3 style={{ margin: 0 }}>Historial de mercado</h3>
           <StatusBadge variant={String(data?.evidence_level || "").includes("media") ? "ok" : "neutral"}>

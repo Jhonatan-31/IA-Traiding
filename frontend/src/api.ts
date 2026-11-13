@@ -527,11 +527,13 @@ export const api = {
     runExitsY = false,
     runEtapaZ = false,
     runEtapaAa = false,
-    runEtapaAb = false
+    runEtapaAb = false,
+    runEtapaAc = false
   ) =>
     getJson<Record<string, unknown>>(
-      `/api/research/center?run_backtest=${runBacktest ? "true" : "false"}&run_backtest_w=${runBacktestW ? "true" : "false"}&run_diagnose_x=${runDiagnoseX ? "true" : "false"}&run_exits_y=${runExitsY ? "true" : "false"}&run_etapa_z=${runEtapaZ ? "true" : "false"}&run_etapa_aa=${runEtapaAa ? "true" : "false"}&run_etapa_ab=${runEtapaAb ? "true" : "false"}`
+      `/api/research/center?run_backtest=${runBacktest ? "true" : "false"}&run_backtest_w=${runBacktestW ? "true" : "false"}&run_diagnose_x=${runDiagnoseX ? "true" : "false"}&run_exits_y=${runExitsY ? "true" : "false"}&run_etapa_z=${runEtapaZ ? "true" : "false"}&run_etapa_aa=${runEtapaAa ? "true" : "false"}&run_etapa_ab=${runEtapaAb ? "true" : "false"}&run_etapa_ac=${runEtapaAc ? "true" : "false"}`
     ),
+  researchEtapaAc: () => getJson<Record<string, unknown>>("/api/research/etapa-ac"),
   researchDiagnoseX: () => getJson<Record<string, unknown>>("/api/research/diagnose-x"),
   researchExitsY: () => getJson<Record<string, unknown>>("/api/research/exits-y"),
   researchEtapaZ: () => getJson<Record<string, unknown>>("/api/research/etapa-z"),

@@ -15,6 +15,8 @@ from .etapa_aa.center_aa import research_center_aa
 from .etapa_aa.run_aa import run_etapa_aa
 from .etapa_ab.center_ab import research_center_ab
 from .etapa_ab.run_ab import run_etapa_ab
+from .etapa_ac.center_ac import research_center_ac
+from .etapa_ac.run_ac import run_etapa_ac
 from .etapa_z.center_z import research_center_z
 from .etapa_z.run_z import run_etapa_z
 from .forensic_a import forensic_rounds
@@ -36,6 +38,7 @@ _EY_CACHE: dict[str, Any] | None = None
 _EZ_CACHE: dict[str, Any] | None = None
 _EAA_CACHE: dict[str, Any] | None = None
 _EAB_CACHE: dict[str, Any] | None = None
+_EAC_CACHE: dict[str, Any] | None = None
 _BT_LOCK = asyncio.Lock()
 _HIST_LOCK = asyncio.Lock()
 
@@ -81,6 +84,13 @@ def _load_etapa_ab_artifact() -> dict[str, Any] | None:
     return _load_json_artifact(
         "/artifacts/history/etapa_ab_results.json",
         "data/market_history/etapa_ab_results.json",
+    )
+
+
+def _load_etapa_ac_artifact() -> dict[str, Any] | None:
+    return _load_json_artifact(
+        "/artifacts/history/etapa_ac_results.json",
+        "data/market_history/etapa_ac_results.json",
     )
 
 
@@ -171,11 +181,12 @@ async def research_center_api(
     run_etapa_z: bool = Query(False),
     run_etapa_aa: bool = Query(False),
     run_etapa_ab: bool = Query(False),
+    run_etapa_ac: bool = Query(False),
 ):
-    """Centro de Investigación de Estrategias (Etapa V/W/X/Y/Z/AA/AB)."""
+    """Centro de Investigación de Estrategias (Etapa V/W/X/Y/Z/AA/AB/AC)."""
     from ..main import db, serial
 
-    global _BT_V_CACHE, _BT_W_CACHE, _DX_CACHE, _EY_CACHE, _EZ_CACHE, _EAA_CACHE, _EAB_CACHE
+    global _BT_V_CACHE, _BT_W_CACHE, _DX_CACHE, _EY_CACHE, _EZ_CACHE, _EAA_CACHE, _EAB_CACHE, _EAC_CACHE
     bt = _BT_V_CACHE
     btw = _BT_W_CACHE
     dx = _DX_CACHE
@@ -183,6 +194,7 @@ async def research_center_api(
     ez = _EZ_CACHE
     eaa = _EAA_CACHE
     eab = _EAB_CACHE
+    eac = _EAC_CACHE
     if ey is None:
         ey = _load_exits_y_artifact()
         _EY_CACHE = ey
@@ -195,6 +207,9 @@ async def research_center_api(
     if eab is None:
         eab = _load_etapa_ab_artifact()
         _EAB_CACHE = eab
+    if eac is None:
+        eac = _load_etapa_ac_artifact()
+        _EAC_CACHE = eac
     if run_backtest:
         async with _BT_LOCK:
             try:
@@ -299,6 +314,21 @@ async def research_center_api(
                     "detail": str(exc)[:200],
                     "claim": {"activate": False, "verdict": "SIN VENTAJA DEMOSTRADA"},
                 }
+    if run_etapa_ac:
+        async with _BT_LOCK:
+            try:
+                _EAC_CACHE = await asyncio.wait_for(
+                    asyncio.to_thread(run_etapa_ac),
+                    timeout=300,
+                )
+                eac = _EAC_CACHE
+            except Exception as exc:
+                eac = {
+                    "available": False,
+                    "error": type(exc).__name__,
+                    "detail": str(exc)[:200],
+                    "claim": {"activate": False},
+                }
     with db() as c:
         base = research_center_y(
             c.execute,
@@ -309,7 +339,8 @@ async def research_center_api(
         )
         zpay = research_center_z(base, ez)
         aapay = research_center_aa(zpay, eaa)
-        return serial(research_center_ab(aapay, eab))
+        abpay = research_center_ab(aapay, eab)
+        return serial(research_center_ac(abpay, eac))
 
 
 @router.get("/diagnose-x")
@@ -360,6 +391,16 @@ async def research_etapa_ab():
     async with _BT_LOCK:
         _EAB_CACHE = await asyncio.to_thread(run_etapa_ab)
         return serial(_EAB_CACHE)
+
+
+@router.get("/etapa-ac")
+async def research_etapa_ac_api():
+    from ..main import serial
+
+    global _EAC_CACHE
+    async with _BT_LOCK:
+        _EAC_CACHE = await asyncio.to_thread(run_etapa_ac)
+        return serial(_EAC_CACHE)
 
 
 @router.get("/history/coverage")
