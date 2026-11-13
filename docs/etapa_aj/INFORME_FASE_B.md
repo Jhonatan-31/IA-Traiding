@@ -7,6 +7,8 @@
 
 **FASE B BLOQUEADA POR PREFLIGHT**
 
+Seguimiento: incidente **EBZ-CONNECT-01** → `INFORME_EBZ_CONNECT_01.md` (intervención física requerida; acceso remoto no recuperado).
+
 No se ejecutó `tailscale serve --https=10000` ni ningún otro cambio en EBZ.
 
 ### Causa
