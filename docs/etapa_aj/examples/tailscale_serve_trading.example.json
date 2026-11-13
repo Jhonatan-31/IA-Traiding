@@ -1,0 +1,16 @@
+{
+  "TCP": {
+    "10000": { "HTTPS": true }
+  },
+  "Web": {
+    "${TS_CERT_DOMAIN}:10000": {
+      "Handlers": {
+        "/": { "Proxy": "http://127.0.0.1:8090" }
+      }
+    }
+  },
+  "_comment": "EJEMPLO AJ — NO APLICAR. Puerto 10000 dedicado a Trading. NO usar 443 (Funnel EVS) ni 8443 (Consultate). Sin Funnel. Solo tailnet.",
+  "_cli_1.104.5": "sudo tailscale serve --bg --https=10000 http://127.0.0.1:8090",
+  "_rollback": "sudo tailscale serve --https=10000 off",
+  "_verify_no_funnel": "tailscale funnel status  # 10000 no debe figurar"
+}
