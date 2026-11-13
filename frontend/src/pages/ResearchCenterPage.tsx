@@ -18,11 +18,12 @@ export default function ResearchCenterPage() {
       runDx = false,
       runEy = false,
       runEz = false,
-      runEaa = false
+      runEaa = false,
+      runEab = false
     ) => {
       try {
         setBusy(true);
-        const r = await api.researchCenter(runBt, runBtW, runDx, runEy, runEz, runEaa);
+        const r = await api.researchCenter(runBt, runBtW, runDx, runEy, runEz, runEaa, runEab);
         setData(r);
         setError(null);
       } catch {
@@ -35,7 +36,7 @@ export default function ResearchCenterPage() {
   );
 
   useEffect(() => {
-    void load(false, false, false, false, false, false);
+    void load(false, false, false, false, false, false, false);
   }, [load]);
 
   const forensic = (data?.forensic_summary || null) as Record<string, unknown> | null;
@@ -67,6 +68,9 @@ export default function ResearchCenterPage() {
   const ivSparkD = ((iv?.equity_spark as Record<string, unknown> | null)?.d28h5 as Array<Record<string, unknown>>) || [];
   const ivSparkB = ((iv?.equity_spark as Record<string, unknown> | null)?.bh_eq as Array<Record<string, unknown>>) || [];
   const ivLabels = (iv?.labels || {}) as Record<string, string>;
+  const vr = (data?.value_vs_risk || null) as Record<string, unknown> | null;
+  const po = (data?.prospect_observation || null) as Record<string, unknown> | null;
+  const vrLabels = (vr?.labels || {}) as Record<string, string>;
 
   const runSmoke = async () => {
     try {
@@ -87,9 +91,9 @@ export default function ResearchCenterPage() {
   return (
     <div>
       <PageHeader
-        eyebrow="Etapa AA"
+        eyebrow="Etapa AB"
         title="Centro de Investigación de Estrategias"
-        subtitle="Validación temporal independiente de D28H5. A y B detenidos. Sin activación."
+        subtitle="Atribución económica y observación preparada. A y B detenidos. Sin activación."
         actions={
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             <button type="button" className="btn" disabled={busy} onClick={() => void runSmoke()}>
@@ -99,25 +103,17 @@ export default function ResearchCenterPage() {
               type="button"
               className="btn"
               disabled={busy}
-              onClick={() => void load(false, false, false, true, false, false)}
+              onClick={() => void load(false, false, false, false, false, true, false)}
             >
-              Analizar salidas Y
-            </button>
-            <button
-              type="button"
-              className="btn"
-              disabled={busy}
-              onClick={() => void load(false, false, false, false, true, false)}
-            >
-              {busy ? "Calculando…" : "Ejecutar laboratorio Z"}
+              Validación AA
             </button>
             <button
               type="button"
               className="btn btn-primary"
               disabled={busy}
-              onClick={() => void load(false, false, false, false, false, true)}
+              onClick={() => void load(false, false, false, false, false, false, true)}
             >
-              {busy ? "Validando…" : "Validación independiente AA"}
+              {busy ? "Analizando…" : "Atribución económica AB"}
             </button>
           </div>
         }
@@ -376,6 +372,72 @@ export default function ResearchCenterPage() {
             </div>
           </>
         )}
+      </section>
+
+      <section className="panel" style={{ marginTop: 16 }}>
+        <div className="panel-title">
+          <h3 style={{ margin: 0 }}>¿La estrategia aporta valor o simplemente reduce el riesgo?</h3>
+          <StatusBadge variant={Boolean(vr?.available) ? "warn" : "neutral"}>
+            {String(vr?.verdict || (vr?.available ? "Lista" : "Pendiente"))}
+          </StatusBadge>
+        </div>
+        <p style={{ fontSize: 12 }} className="muted">
+          {vrLabels.simulation || "Simulaciones / atribución AB"} · no es trading
+        </p>
+        {!Boolean(vr?.available) && (
+          <p className="muted">Pulsa «Atribución económica AB».</p>
+        )}
+        {Boolean(vr?.available) && (
+          <>
+            <div className="metric-grid">
+              <MetricCard label="D28H5" value={money(vr?.d28h5_net as number, { signed: true })} />
+              <MetricCard label="BH-EQ" value={money(vr?.bh_eq_net as number, { signed: true })} />
+              <MetricCard
+                label="Exp. comparable"
+                value={money(vr?.exp_match_net as number, { signed: true })}
+              />
+              <MetricCard label="Efectivo" value={money(vr?.cash_net as number, { signed: true })} />
+              <MetricCard
+                label="Fixed-55"
+                value={money(vr?.fixed55_net as number, { signed: true })}
+              />
+              <MetricCard
+                label="Selección"
+                value={money(vr?.selection_contribution as number, { signed: true })}
+              />
+              <MetricCard
+                label="Exposición"
+                value={money(vr?.exposure_contribution as number, { signed: true })}
+              />
+              <MetricCard label="Costos" value={money(vr?.costs as number)} />
+              <MetricCard label="Cash days" value={Number(vr?.cash_days || 0)} />
+              <MetricCard label="Turnover" value={Number(vr?.turnover || 0)} />
+            </div>
+            <ul style={{ fontSize: 12 }}>
+              {((vr?.warnings as string[]) || []).map((w) => (
+                <li key={w}>{w}</li>
+              ))}
+            </ul>
+          </>
+        )}
+      </section>
+
+      <section className="panel" style={{ marginTop: 16 }}>
+        <div className="panel-title">
+          <h3 style={{ margin: 0 }}>Observación de señales futuras</h3>
+          <StatusBadge variant="neutral">{String(po?.status || "—")}</StatusBadge>
+        </div>
+        <p style={{ fontSize: 13 }}>
+          {String(po?.reason_disabled || "Protocolo prospectivo — no es ejecución.")}
+        </p>
+        <div className="metric-grid">
+          <MetricCard label="Protocolo" value={String(po?.protocol_version || "—")} />
+          <MetricCard label="Decisiones" value={Number(po?.decisions || 0)} />
+          <MetricCard label="Inicio" value={String(po?.start_at || "no iniciado")} />
+        </div>
+        <p className="muted" style={{ fontSize: 12 }}>
+          {(po?.limitations as string[])?.[0] || ""}
+        </p>
       </section>
 
       <section className="panel" style={{ marginTop: 16 }}>
