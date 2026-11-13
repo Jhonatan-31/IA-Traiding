@@ -53,4 +53,12 @@ A/B STOPPED · PAPER_ONLY · sin activación de estrategias en AG
 
 ## ENTREGA
 
-Ver commit/tag `checkpoint-etapa-ag` tras deploy.
+| Ítem | Valor |
+|------|--------|
+| Commit | `bcb41a5` |
+| Tag | `checkpoint-etapa-ag` |
+| Checkpoint previo | `checkpoint-etapa-ag-pre-20261113_143948` |
+| Deploy EBZ | OK (Tailscale; LAN SSH inestable en el momento del deploy) |
+| Auth prod | `DASHBOARD_READ_AUTH=0` |
+| Tests AG+AF+AE | 21 passed |
+| Rollback | redeploy commit/tag pre-AG **sin** `down -v` |
