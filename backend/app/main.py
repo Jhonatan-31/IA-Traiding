@@ -511,6 +511,20 @@ async def work():
             await asyncio.sleep(PERIOD)
 
 
+async def _reliability_sampler_loop():
+    """AF: accumulate real SLI samples without relying on dashboard polling."""
+    from .ops.reliability import SAMPLE_INTERVAL_S, probe_and_record_sample
+
+    await asyncio.sleep(8)
+    while True:
+        try:
+            with db() as c:
+                probe_and_record_sample(c.execute, source="background")
+        except Exception:
+            pass
+        await asyncio.sleep(max(30, int(SAMPLE_INTERVAL_S)))
+
+
 @asynccontextmanager
 async def lifespan(app):
     for attempt in range(30):
@@ -521,7 +535,15 @@ async def lifespan(app):
             if attempt == 29:
                 raise
             await asyncio.sleep(2)
-    yield
+    sampler = asyncio.create_task(_reliability_sampler_loop())
+    try:
+        yield
+    finally:
+        sampler.cancel()
+        try:
+            await sampler
+        except asyncio.CancelledError:
+            pass
 
 
 app = FastAPI(title="AI Trading Bot - PAPER ONLY", lifespan=lifespan)

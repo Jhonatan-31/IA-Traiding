@@ -106,6 +106,9 @@ else
   echo "DEPLOY_GIT_COMMIT=$commit" >> .env
 fi
 docker compose -p ia-bot-trading -f $ComposeRel --env-file .env up -d --build
+# Refresh dashboard nginx after API recreate (stale Docker DNS → 502)
+docker compose -p ia-bot-trading -f $ComposeRel --env-file .env restart dashboard || true
+sleep 3
 # Persist deploy meta inside paper DB (best-effort)
 docker compose -p ia-bot-trading -f $ComposeRel --env-file .env exec -T db \
   psql -U paper -d paper -c "CREATE TABLE IF NOT EXISTS deploy_meta(id INTEGER PRIMARY KEY CHECK (id=1), git_commit TEXT, deployed_at TIMESTAMPTZ, notes TEXT, updated_at TIMESTAMPTZ DEFAULT NOW()); INSERT INTO deploy_meta(id, git_commit, deployed_at, notes) VALUES (1, '$commit', NOW(), 'deploy_trading_ebz') ON CONFLICT (id) DO UPDATE SET git_commit=EXCLUDED.git_commit, deployed_at=EXCLUDED.deployed_at, notes=EXCLUDED.notes, updated_at=NOW();" \

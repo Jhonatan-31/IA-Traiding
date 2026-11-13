@@ -76,6 +76,78 @@ def classify_overall(
     return "UNKNOWN"
 
 
+def _functional_from_heartbeat(heartbeat_at: Any, *, expected_every_s: float = 60.0) -> str:
+    """Lightweight functional class for background sampler (no full continuity snapshot)."""
+    from .continuity import classify_gap, heartbeat_gap_seconds
+
+    gap_s = heartbeat_gap_seconds(heartbeat_at)
+    warn_s = max(expected_every_s * 3, 180.0)
+    crit_s = max(expected_every_s * 10, 600.0)
+    gap = classify_gap(gap_s, warn_s=warn_s, crit_s=crit_s, expected_every_s=expected_every_s)
+    st = gap.get("status")
+    if st == "OK":
+        return "READY"
+    if st == "WARNING":
+        return "DEGRADED"
+    if st == "UNKNOWN":
+        return "UNKNOWN"
+    return "DOWN"
+
+
+def probe_and_record_sample(execute: Callable, *, source: str = "background") -> dict[str, Any]:
+    """
+    Autonomous sample from DB heartbeats — does not require dashboard traffic.
+    Idempotent via maybe_record_sample minute buckets.
+    """
+    ensure_reliability_schema(execute)
+    api_ok = True
+    db_ok = True
+    demo_fn = "UNKNOWN"
+    active_fn = "UNKNOWN"
+    market_stale: bool | None = None
+    try:
+        demo = execute(
+            "SELECT status, heartbeat_at FROM demo_state WHERE id=1"
+        ).fetchone()
+        active = execute(
+            "SELECT status, heartbeat_at FROM active_state WHERE id=1"
+        ).fetchone()
+        price = execute("SELECT MAX(at) AS at FROM prices").fetchone()
+        demo_fn = _functional_from_heartbeat((demo or {}).get("heartbeat_at"))
+        active_fn = _functional_from_heartbeat((active or {}).get("heartbeat_at"))
+        if price and price.get("at"):
+            from .continuity import heartbeat_gap_seconds
+
+            age = heartbeat_gap_seconds(price["at"])
+            market_stale = age is None or age >= 300.0
+        else:
+            market_stale = True
+    except Exception as exc:
+        db_ok = False
+        return maybe_record_sample(
+            execute,
+            api_ok=api_ok,
+            db_ok=db_ok,
+            demo_functional="UNKNOWN",
+            active_functional="UNKNOWN",
+            market_stale=None,
+            detail={"source": source, "probe_error": str(exc)[:200]},
+        )
+    return maybe_record_sample(
+        execute,
+        api_ok=api_ok,
+        db_ok=db_ok,
+        demo_functional=demo_fn,
+        active_functional=active_fn,
+        market_stale=market_stale,
+        detail={
+            "source": source,
+            "demo_status": (demo or {}).get("status"),
+            "active_status": (active or {}).get("status"),
+        },
+    )
+
+
 def maybe_record_sample(
     execute: Callable,
     *,
