@@ -12,10 +12,17 @@ export default function ResearchCenterPage() {
   const [histMsg, setHistMsg] = useState<string | null>(null);
 
   const load = useCallback(
-    async (runBt = false, runBtW = false, runDx = false, runEy = false, runEz = false) => {
+    async (
+      runBt = false,
+      runBtW = false,
+      runDx = false,
+      runEy = false,
+      runEz = false,
+      runEaa = false
+    ) => {
       try {
         setBusy(true);
-        const r = await api.researchCenter(runBt, runBtW, runDx, runEy, runEz);
+        const r = await api.researchCenter(runBt, runBtW, runDx, runEy, runEz, runEaa);
         setData(r);
         setError(null);
       } catch {
@@ -28,7 +35,7 @@ export default function ResearchCenterPage() {
   );
 
   useEffect(() => {
-    void load(false, false, false, false, false);
+    void load(false, false, false, false, false, false);
   }, [load]);
 
   const forensic = (data?.forensic_summary || null) as Record<string, unknown> | null;
@@ -56,6 +63,10 @@ export default function ResearchCenterPage() {
   const labRows = (lab?.comparison_rows as Array<Record<string, unknown>>) || [];
   const labExec = (lab?.executive || {}) as Record<string, unknown>;
   const labHyps = (lab?.hypotheses_human as Array<Record<string, unknown>>) || [];
+  const iv = (data?.independent_validation || null) as Record<string, unknown> | null;
+  const ivSparkD = ((iv?.equity_spark as Record<string, unknown> | null)?.d28h5 as Array<Record<string, unknown>>) || [];
+  const ivSparkB = ((iv?.equity_spark as Record<string, unknown> | null)?.bh_eq as Array<Record<string, unknown>>) || [];
+  const ivLabels = (iv?.labels || {}) as Record<string, string>;
 
   const runSmoke = async () => {
     try {
@@ -76,9 +87,9 @@ export default function ResearchCenterPage() {
   return (
     <div>
       <PageHeader
-        eyebrow="Etapa Z"
+        eyebrow="Etapa AA"
         title="Centro de Investigación de Estrategias"
-        subtitle="Laboratorio avanzado: horizontes mayores, fortaleza relativa y benchmarks. A y B detenidos. Sin activación."
+        subtitle="Validación temporal independiente de D28H5. A y B detenidos. Sin activación."
         actions={
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             <button type="button" className="btn" disabled={busy} onClick={() => void runSmoke()}>
@@ -88,17 +99,25 @@ export default function ResearchCenterPage() {
               type="button"
               className="btn"
               disabled={busy}
-              onClick={() => void load(false, false, false, true, false)}
+              onClick={() => void load(false, false, false, true, false, false)}
             >
               Analizar salidas Y
             </button>
             <button
               type="button"
-              className="btn btn-primary"
+              className="btn"
               disabled={busy}
-              onClick={() => void load(false, false, false, false, true)}
+              onClick={() => void load(false, false, false, false, true, false)}
             >
               {busy ? "Calculando…" : "Ejecutar laboratorio Z"}
+            </button>
+            <button
+              type="button"
+              className="btn btn-primary"
+              disabled={busy}
+              onClick={() => void load(false, false, false, false, false, true)}
+            >
+              {busy ? "Validando…" : "Validación independiente AA"}
             </button>
           </div>
         }
@@ -241,6 +260,119 @@ export default function ResearchCenterPage() {
               {String(lab?.adversarial_summary || "")}
               <br />
               <span className="muted">{(lab?.limitations as string[])?.[0]}</span>
+            </div>
+          </>
+        )}
+      </section>
+
+      <section className="panel" style={{ marginTop: 16 }}>
+        <div className="panel-title">
+          <h3 style={{ margin: 0 }}>Validación independiente</h3>
+          <StatusBadge
+            variant={
+              String(iv?.verdict || "").includes("CANDIDATA")
+                ? "ok"
+                : String(iv?.verdict || "") === "RECHAZADA"
+                  ? "warn"
+                  : Boolean(iv?.available)
+                    ? "warn"
+                    : "neutral"
+            }
+          >
+            {String(iv?.verdict || (iv?.available ? "Lista" : "Pendiente"))}
+          </StatusBadge>
+        </div>
+        <p style={{ fontSize: 13, lineHeight: 1.45 }}>
+          Evaluación temporal de una sola pasada de Z-TSMOM-D28H5 congelada. No es prueba PAPER
+          prospectiva ni autorización de activación.
+        </p>
+        <ul style={{ fontSize: 12, color: "var(--muted, #666)" }}>
+          <li>{ivLabels.exploratory_z || "Investigación histórica exploratoria (Etapa Z)"}</li>
+          <li>{ivLabels.temporal_aa || "Validación temporal (Etapa AA)"}</li>
+          <li>{ivLabels.paper_trial || "Prueba prospectiva PAPER — no autorizada aquí"}</li>
+        </ul>
+        {!Boolean(iv?.available) && (
+          <p className="muted">Pulsa «Validación independiente AA» (ingesta 1d + motor + veredicto).</p>
+        )}
+        {Boolean(iv?.available) && (
+          <>
+            <div className="metric-grid">
+              <MetricCard label="Hash" value={String(iv?.version_hash || "—")} />
+              <MetricCard label="Independencia" value={String(iv?.independence || "—")} />
+              <MetricCard
+                label="D28H5 neto"
+                value={money(iv?.d28h5_net as number, { signed: true })}
+              />
+              <MetricCard
+                label="BH-EQ neto"
+                value={money(iv?.bh_eq_net as number, { signed: true })}
+              />
+              <MetricCard
+                label="Exceso neto"
+                value={money(iv?.excess_net as number, { signed: true })}
+              />
+              <MetricCard
+                label="DD D28H5"
+                value={
+                  iv?.d28h5_dd == null ? "—" : pct(Number(iv.d28h5_dd) * 100, { signed: false })
+                }
+              />
+              <MetricCard
+                label="DD BH-EQ"
+                value={iv?.bh_eq_dd == null ? "—" : pct(Number(iv.bh_eq_dd) * 100, { signed: false })}
+              />
+              <MetricCard
+                label="Exposición D28H5"
+                value={
+                  iv?.d28h5_exposure == null
+                    ? "—"
+                    : pct(Number(iv.d28h5_exposure) * 100, { signed: false })
+                }
+              />
+            </div>
+            <p style={{ fontSize: 13 }}>
+              Período: {String((iv?.period as Record<string, unknown> | null)?.start_iso || "—")} →{" "}
+              {String((iv?.period as Record<string, unknown> | null)?.end_iso || "—")} · Consumida:{" "}
+              {iv?.consumed ? "sí" : "no"}
+            </p>
+            <p style={{ fontSize: 13 }}>{String(iv?.reason || "")}</p>
+            {(ivSparkD.length > 1 || ivSparkB.length > 1) && (
+              <div style={{ marginTop: 12 }}>
+                <h4 style={{ marginBottom: 8 }}>Patrimonio (spark)</h4>
+                <svg viewBox="0 0 600 120" width="100%" height="120" role="img" aria-label="Equity">
+                  {(() => {
+                    const all = [...ivSparkD, ...ivSparkB].map((p) => Number(p.equity));
+                    const mn = Math.min(...all);
+                    const mx = Math.max(...all);
+                    const span = mx - mn || 1;
+                    const path = (pts: Array<Record<string, unknown>>, color: string) => {
+                      if (pts.length < 2) return null;
+                      const d = pts
+                        .map((p, i) => {
+                          const x = (i / (pts.length - 1)) * 580 + 10;
+                          const y = 110 - ((Number(p.equity) - mn) / span) * 100;
+                          return `${i === 0 ? "M" : "L"}${x.toFixed(1)},${y.toFixed(1)}`;
+                        })
+                        .join(" ");
+                      return <path d={d} fill="none" stroke={color} strokeWidth="2" />;
+                    };
+                    return (
+                      <>
+                        {path(ivSparkD, "#0b6e4f")}
+                        {path(ivSparkB, "#5c6b7a")}
+                      </>
+                    );
+                  })()}
+                </svg>
+                <p className="muted" style={{ fontSize: 12 }}>
+                  Verde: D28H5 · Gris: buy&amp;hold equiponderado
+                </p>
+              </div>
+            )}
+            <div className="info-box" style={{ marginTop: 12 }}>
+              {String(iv?.adversarial_summary || "")}
+              <br />
+              <span className="muted">{(iv?.limitations as string[])?.[0]}</span>
             </div>
           </>
         )}
