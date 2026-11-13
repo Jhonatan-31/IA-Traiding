@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # Backup MySQL de Consultate en EBZ → /srv/backups/consultate (disco HITACHI).
+# Cron: 5 0,12 * * * (00:05 y 12:05 hora local EBZ).
 # No toca ia-bot-trading ni EVS. No imprime secretos.
 set -euo pipefail
 OUT_DIR="${OUT_DIR:-/srv/backups/consultate}"

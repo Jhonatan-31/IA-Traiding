@@ -19,6 +19,15 @@
 - Consultate: `/srv/backups/scripts/ebz_backup_consultate.sh`
 - Setup disco: `scripts/ebz_setup_backup_disk.sh` (destructivo; solo una vez)
 
+## Horario (cron EBZ)
+
+Servidor en UTC; crontab usa `CRON_TZ=America/Bogota` (Colombia).
+
+| Proyecto | Crontab | Hora Colombia |
+|----------|---------|---------------|
+| Trading | `0 0,12 * * *` | 00:00 y 12:00 |
+| Consultate | `5 0,12 * * *` | 00:05 y 12:05 |
+
 ## Notas
 
 - Este disco es **copia en el mismo servidor** (segundo medio físico). No sustituye backup off-site.

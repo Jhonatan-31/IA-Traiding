@@ -3,7 +3,7 @@
 # Destino preferido: disco HITACHI montado en /srv/backups/ia-bot-trading
 # Uso:
 #   bash /srv/apps/ia-bot-trading/scripts/ebz_backup_paper.sh
-# Cron sugerido: 15 */6 * * * ...
+# Cron: 0 0,12 * * * (00:00 y 12:00 hora local EBZ)
 set -euo pipefail
 ROOT="${ROOT:-/srv/apps/ia-bot-trading}"
 if [[ -d /srv/backups/ia-bot-trading ]]; then
