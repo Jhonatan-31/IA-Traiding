@@ -48,6 +48,26 @@ def test_parse_klines_ignores_extra_columns():
     assert rows[0]["volume"] == 12.5
 
 
+def test_ac_p0_patterns_still_present_documented():
+    """Regresión documental: paths P0 deben seguir visibles hasta etapa de fix."""
+    import inspect
+
+    from app.active import engine as active_engine
+    from app.active import B_EXECUTION_AUTHORIZED
+    from app.demo import engine as demo_engine
+    from app.market_stream import aggregator as agg
+
+    demo_src = inspect.getsource(demo_engine._try_buy)
+    assert "position_not_created" in demo_src
+    assert "cash-%s" in demo_src or "cash = cash" in demo_src or "SET cash" in demo_src
+    act_src = inspect.getsource(active_engine.run_cycle)
+    assert "b_execution_not_authorized" in act_src
+    # Flag actual True; el defecto es el early-return estructural
+    assert B_EXECUTION_AUTHORIZED is True
+    assert "if not B_EXECUTION_AUTHORIZED" in act_src
+    assert getattr(agg, "_MAX_SEEN_IDS", 0) == 4096
+
+
 def test_reconcile_ab_if_artifact_present():
     from pathlib import Path
 

@@ -173,6 +173,95 @@ FINDINGS: list[dict[str, Any]] = [
         "fixed_in_ac": False,
         "is_strength": True,
     },
+    {
+        "id": "AC-F11",
+        "priority": "P0",
+        "title": "Compra sin rollback si falla creación de posición",
+        "description": (
+            "demo/active: cash se debita y luego INSERT posición ON CONFLICT DO NOTHING; "
+            "si no hay fila, retorna position_not_created sin devolver el cash."
+        ),
+        "evidence": "demo/engine.py ~418-427; active/engine.py pattern equivalente",
+        "location": "backend/app/demo/engine.py; backend/app/active/engine.py",
+        "impact": "Corrupción contable: cash↓ sin inventario",
+        "severity": "Baja en operación normal; alta si carrera/duplicado de símbolo",
+        "solution": "Transacción única + rollback cash o DELETE orden/refund",
+        "risks": "Tocar ledgers demo/active — requiere etapa dedicada y tests",
+        "validation": "test integración compra duplicada → cash invariante",
+        "rollback": "revertir fix; no alterar historial a mano",
+        "fixed_in_ac": False,
+        "source": "auditoría explore riesgo/ledgers",
+    },
+    {
+        "id": "AC-F12",
+        "priority": "P0",
+        "title": "Active B omite salidas protectoras si ejecución no autorizada",
+        "description": (
+            "Si B_EXECUTION_AUTHORIZED=False, run_cycle retorna antes de evaluar "
+            "posiciones/SL-TP. Distinto de STOPPED (que sí permite salidas)."
+        ),
+        "evidence": "active/engine.py L113-116 early return",
+        "location": "backend/app/active/engine.py",
+        "impact": "Posiciones B quedarían sin protección bajo flag False",
+        "severity": "Baja hoy (flag=True en __init__); crítica si se desautoriza B",
+        "solution": "Evaluar salidas protectoras antes del gate de autorización de entradas",
+        "risks": "Cambio semántico de B — etapa controlada",
+        "validation": "test: flag False + posición abierta ⇒ SELL protector permitido",
+        "rollback": "revertir motor B",
+        "fixed_in_ac": False,
+        "source": "auditoría explore riesgo/ledgers",
+    },
+    {
+        "id": "AC-F13",
+        "priority": "P1",
+        "title": "Doble cargo de fee en cash demo/active/express",
+        "description": (
+            "estimate_fill_price ya incorpora fee_rate en px; luego total=qty*px+fee "
+            "vuelve a sumar fee al debitar cash."
+        ),
+        "evidence": "prospect/execution.py estimate_fill_price; demo/engine total=qty*px+fee",
+        "location": "backend/app/demo/engine.py; active/engine.py; express/engine.py",
+        "impact": "Costos PAPER sobreestimados; distorsiona auditoría económica operativa",
+        "solution": "Unificar: fee solo en px O solo como add-on, no ambos",
+        "risks": "Cambiar PnL histórico simulado de A/B",
+        "validation": "caso unitario qty/px/fee → cash delta exacto",
+        "rollback": "revertir; no reescribir trades viejos sin migración",
+        "fixed_in_ac": False,
+        "source": "auditoría explore riesgo/ledgers",
+    },
+    {
+        "id": "AC-F14",
+        "priority": "P1",
+        "title": "Dedupe trade_id market-stream puede fallar bajo alto throughput",
+        "description": (
+            "Al superar _MAX_SEEN_IDS=4096 se recorta seen_ids; un trade_id ya visto "
+            "puede reaplicarse e inflar volumen de vela."
+        ),
+        "evidence": "market_stream/aggregator.py eviction half-set",
+        "location": "backend/app/market_stream/aggregator.py",
+        "impact": "Velas viz/agregadas con volumen inflado (no órdenes)",
+        "solution": "Estructura LRU/bloom o ventana por open_time; test >4096 trades",
+        "risks": "Memoria",
+        "validation": "test eviction + replay trade_id",
+        "rollback": "revert aggregator",
+        "fixed_in_ac": False,
+        "source": "auditoría explore market-stream",
+    },
+    {
+        "id": "AC-F15",
+        "priority": "P2",
+        "title": "Express API sin LAB_CONTROL_TOKEN",
+        "description": "lab/demo/active usan require_lab_token; express/api no.",
+        "evidence": "compose LAB_CONTROL_TOKEN; express/api.py sin require_lab_token",
+        "location": "backend/app/express/api.py",
+        "impact": "Superficie de control desigual (express ENDED actualmente)",
+        "solution": "Alinear auth o documentar excepción consciente",
+        "risks": "bajo si express sigue ENDED",
+        "validation": "401 sin token en mutaciones express",
+        "rollback": "N/A",
+        "fixed_in_ac": False,
+        "source": "auditoría explore inventario",
+    },
 ]
 
 
@@ -180,9 +269,14 @@ def findings_summary() -> dict[str, Any]:
     by_p: dict[str, int] = {}
     for f in FINDINGS:
         by_p[f["priority"]] = by_p.get(f["priority"], 0) + 1
+    # Top: P0 primero, luego P1…
+    ordered = sorted(
+        FINDINGS,
+        key=lambda f: ({"P0": 0, "P1": 1, "P2": 2, "P3": 3}.get(f["priority"], 9), f["id"]),
+    )
     return {
         "n": len(FINDINGS),
         "by_priority": by_p,
         "items": FINDINGS,
-        "top10": FINDINGS[:10],
+        "top10": ordered[:10],
     }

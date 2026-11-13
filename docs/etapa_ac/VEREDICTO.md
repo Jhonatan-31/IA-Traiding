@@ -40,7 +40,8 @@ Limitaciones: holdout consumido; no supera efectivo; simulador sin BBO; IC AA am
 
 ## C. TOP HALLAZGOS
 
-Ver matriz en `informe_hallazgos.md` (AC-F01…F10). Prioridad inmediata: **AC-F01 runners**.
+Ver `informe_hallazgos.md` (AC-F01…F15). Prioridad inmediata: **F01 runners**, **F11 rollback compra**, **F12 salidas B**.  
+Ampliado tras auditorías explore (market-stream, inventario, riesgo/ledgers).
 
 ## F. SEGURIDAD
 
