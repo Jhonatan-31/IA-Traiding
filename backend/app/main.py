@@ -873,34 +873,77 @@ async def system():
             },
         },
     }
+    from .ops.continuity import safe_auto_recoveries
+    from .ops.health_center import (
+        build_continuity_snapshot,
+        ensure_continuity_schema,
+        record_gap_if_needed,
+    )
+
+    deploy_meta = None
+    recent_gaps: list = []
+    try:
+        with db() as c2:
+            ensure_continuity_schema(c2.execute)
+            record_gap_if_needed(
+                c2.execute, source="demo_runner", gap=demo_gap, open_positions=demo_pos_n
+            )
+            record_gap_if_needed(
+                c2.execute, source="active_runner", gap=active_gap, open_positions=active_pos_n
+            )
+            deploy_meta = c2.execute("SELECT * FROM deploy_meta WHERE id=1").fetchone()
+            recent_gaps = list(
+                c2.execute(
+                    """SELECT id, detected_at, source, gap_s, status, host_suspend_suspected,
+                              open_positions, resolved_at
+                       FROM continuity_gap_events ORDER BY id DESC LIMIT 20"""
+                )
+            )
+    except Exception:
+        pass
+
+    continuity_center = build_continuity_snapshot(
+        demo_st=demo_st,
+        active_st=active_st,
+        demo_pos_n=demo_pos_n,
+        active_pos_n=active_pos_n,
+        price_age_s=price_age_s,
+        shadow_hb=sched["heartbeat_at"] if sched else None,
+        worker_scan_age_s=scan_age,
+        deploy_meta=serial(deploy_meta) if deploy_meta else None,
+        recent_gaps=serial(recent_gaps),
+    )
+    critical = list(continuity_center.get("critical_alerts") or [])
+    for a in (
+        {
+            "id": "demo_runner_gap",
+            "severity": demo_gap["status"],
+            "message": f"demo heartbeat gap={demo_gap.get('gap_s')}s",
+            "open_positions": demo_pos_n,
+        }
+        if demo_gap["status"] in ("WARNING", "CRITICAL", "UNKNOWN")
+        else None,
+        {
+            "id": "active_runner_gap",
+            "severity": active_gap["status"],
+            "message": f"active heartbeat gap={active_gap.get('gap_s')}s",
+            "open_positions": active_pos_n,
+        }
+        if active_gap["status"] in ("WARNING", "CRITICAL", "UNKNOWN")
+        else None,
+    ):
+        if a and a["id"] not in {x.get("id") for x in critical}:
+            critical.append(a)
+
     return serial(
         {
             "mode": "PAPER_ONLY",
             "checked_at": datetime.now(timezone.utc).isoformat(),
             "components": components,
             "continuity": continuity,
-            "critical_alerts": [
-                a
-                for a in [
-                    {
-                        "id": "demo_runner_gap",
-                        "severity": demo_gap["status"],
-                        "message": f"demo heartbeat gap={demo_gap.get('gap_s')}s",
-                        "open_positions": demo_pos_n,
-                    }
-                    if demo_gap["status"] in ("WARNING", "CRITICAL", "UNKNOWN")
-                    else None,
-                    {
-                        "id": "active_runner_gap",
-                        "severity": active_gap["status"],
-                        "message": f"active heartbeat gap={active_gap.get('gap_s')}s",
-                        "open_positions": active_pos_n,
-                    }
-                    if active_gap["status"] in ("WARNING", "CRITICAL", "UNKNOWN")
-                    else None,
-                ]
-                if a
-            ],
+            "continuity_center": continuity_center,
+            "auto_recovery_policy": safe_auto_recoveries(),
+            "critical_alerts": critical,
             "engine": engine,
             "last_scan": last_scan,
             "last_trade_at": last_trade["at"] if last_trade else None,
@@ -920,12 +963,31 @@ async def system():
             "ohlcv_cache": ohlcv_mod.cache_stats(),
             "notes": [
                 "Sin acceso al socket Docker desde el dashboard.",
-                "CPU/RAM host: usar docker stats en el equipo local.",
+                "CPU/RAM host: usar docker stats en el host EBZ.",
                 "UNKNOWN/WARNING/ERROR se basan en evidencia temporal.",
                 "shadow_scheduler: heartbeat >900s ⇒ ERROR; contenedor up ≠ saludable.",
+                "OK_SNAPSHOT ≠ prueba de continuidad 24/7 longitudinal.",
+                "Dashboard :8090 en LAN sin auth de lectura — no equivale a autenticación.",
             ],
         }
     )
+
+
+@app.get("/api/continuity")
+async def continuity_center_api():
+    """Centro de salud y continuidad — evidencia de aplicación, no Docker socket."""
+    system_payload = await system()
+    return {
+        "mode": "PAPER_ONLY",
+        "continuity_center": system_payload.get("continuity_center"),
+        "continuity": system_payload.get("continuity"),
+        "critical_alerts": system_payload.get("critical_alerts"),
+        "auto_recovery_policy": system_payload.get("auto_recovery_policy"),
+        "components": {
+            k: system_payload.get("components", {}).get(k)
+            for k in ("demo_runner", "active_runner", "shadow_scheduler", "worker", "postgres", "binance")
+        },
+    }
 
 
 @app.get("/api/diagnostics/binance")

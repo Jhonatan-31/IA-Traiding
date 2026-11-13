@@ -106,11 +106,50 @@ def reconcile_after_gap(
         if stale_prices:
             actions.append("refrescar_mercado_antes_de_operar")
         if gap.get("host_suspend_suspected"):
-            actions.append("revisar_reinicio_host_docker_wsl")
+            actions.append("revisar_reinicio_host_docker_o_suspend")
     return {
         **gap,
         "price_age_s": price_age_s,
         "stale_prices": stale_prices,
         "open_positions": open_positions,
         "recommended_actions": actions,
+        "cause_class": (
+            "host_or_process_gap_suspected"
+            if gap.get("host_suspend_suspected")
+            else ("elevated_latency" if gap.get("status") != "OK" else "none")
+        ),
+        "cause_note": (
+            "No clasificar automáticamente todo hueco como suspensión Windows/WSL. "
+            "En EBZ nativo Linux, preferir reinicio host/Docker/proceso/red/indeterminado."
+        ),
+    }
+
+
+def safe_auto_recoveries() -> dict[str, Any]:
+    """Document what may auto-recover vs needs human intervention."""
+    return {
+        "safe_automatic": [
+            "docker_restart_unless_stopped_for_crashed_container",
+            "websocket_reconnect_inside_market_stream_hub",
+            "db_client_retry_on_transient_errors_if_implemented_by_caller",
+        ],
+        "requires_human": [
+            "host_powered_off",
+            "disk_full",
+            "corrupt_volume",
+            "auth_misconfiguration",
+            "strategy_state_change_running",
+            "external_alert_when_entire_host_down",
+        ],
+        "limits": {
+            "no_indefinite_restart_storms": True,
+            "never_reactivate_stopped_strategies": True,
+            "never_restart_foreign_stacks": True,
+            "same_host_watchdog_cannot_see_full_host_death": True,
+        },
+        "optional_external_check": {
+            "proposed": "HTTP probe to :8090/api/health from another host/Tailscale node",
+            "status": "NOT_CONFIGURED",
+            "note": "No contratar ni conectar servicios externos sin autorización.",
+        },
     }

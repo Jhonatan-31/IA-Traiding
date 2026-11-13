@@ -134,45 +134,69 @@ export default function HealthPage() {
       </div>
 
       <div className="card" style={{ marginTop: 14 }}>
-        <h3>Runners A/B y continuidad (evidencia real)</h3>
+        <h3>Centro de salud y continuidad</h3>
         {(() => {
           const demo = comps.demo_runner;
           const active = comps.active_runner;
           const cont = (system as { continuity?: Record<string, unknown> } | null)?.continuity;
+          const center = (
+            system as { continuity_center?: Record<string, unknown> } | null
+          )?.continuity_center;
+          const services = (center?.services || {}) as Record<
+            string,
+            Record<string, unknown>
+          >;
+          const demoSvc = services.demo_runner || {};
+          const activeSvc = services.active_runner || {};
+          const demoProt = (demoSvc.entries_protection || {}) as Record<string, unknown>;
+          const activeProt = (activeSvc.entries_protection || {}) as Record<string, unknown>;
+          const deploy = (center?.deploy || {}) as Record<string, unknown>;
           const crit = (
             (system as { critical_alerts?: Array<Record<string, unknown>> } | null)
               ?.critical_alerts || []
           );
           const dEv = (demo?.evidence || {}) as Record<string, unknown>;
           const aEv = (active?.evidence || {}) as Record<string, unknown>;
+          const overall = String(center?.overall || "UNKNOWN");
           return (
             <>
               <p className="muted" style={{ fontSize: 12 }}>
-                Contenedor Up ≠ saludable. Sin posiciones ≠ supervisor funcionando.
-                Huecos de heartbeat no afirman cobertura SL/TP continua.
+                Contenedor Up ≠ saludable. Sin posiciones ≠ supervisor sano. OK_SNAPSHOT no
+                prueba 24/7 longitudinal. Caída total del host no es visible desde dentro.
+              </p>
+              <p>
+                Estado general:{" "}
+                <span className={`pill ${pillFor(overall === "OK_SNAPSHOT" ? "OK" : overall)}`}>
+                  {overall}
+                </span>{" "}
+                · deploy {String(deploy.git_commit || "—").slice(0, 12)}
               </p>
               <p>
                 Demo (A):{" "}
-                <span className={`pill ${pillFor(demo?.status)}`}>
-                  {demo?.status || "UNKNOWN"}
+                <span className={`pill ${pillFor(String(demoSvc.functional_status || demo?.status))}`}>
+                  {String(demoSvc.functional_status || demo?.status || "UNKNOWN")}
                 </span>{" "}
-                bot={String(dEv.bot_status ?? "—")} · pos={String(dEv.open_positions ?? "—")} ·
-                última eval {fmtTime(dEv.last_eval_at as string)} · hb edad{" "}
-                {String(dEv.heartbeat_age_s ?? "—")} s
+                bot={String(dEv.bot_status ?? "—")} · entradas={String(demoProt.entries ?? "—")} ·
+                protección={String(demoProt.protection ?? "—")} · pos=
+                {String(dEv.open_positions ?? "—")} · hb {String(dEv.heartbeat_age_s ?? "—")} s ·
+                eval {fmtTime(dEv.last_eval_at as string)}
               </p>
               <p>
                 Active (B):{" "}
-                <span className={`pill ${pillFor(active?.status)}`}>
-                  {active?.status || "UNKNOWN"}
+                <span
+                  className={`pill ${pillFor(String(activeSvc.functional_status || active?.status))}`}
+                >
+                  {String(activeSvc.functional_status || active?.status || "UNKNOWN")}
                 </span>{" "}
-                bot={String(aEv.bot_status ?? "—")} · pos={String(aEv.open_positions ?? "—")} ·
-                última eval {fmtTime(aEv.last_eval_at as string)} · hb edad{" "}
-                {String(aEv.heartbeat_age_s ?? "—")} s
+                bot={String(aEv.bot_status ?? "—")} · entradas={String(activeProt.entries ?? "—")} ·
+                protección={String(activeProt.protection ?? "—")} · pos=
+                {String(aEv.open_positions ?? "—")} · hb {String(aEv.heartbeat_age_s ?? "—")} s ·
+                eval {fmtTime(aEv.last_eval_at as string)}
               </p>
               {cont ? (
                 <p>
-                  Continuidad: {String(cont.status)} · gap={String(cont.gap_s ?? "—")}s ·
-                  suspend sospechado={String(cont.host_suspend_suspected)} · precios stale=
+                  Continuidad: {String(cont.status)} · gap={String(cont.gap_s ?? "—")}s · causa=
+                  {String(cont.cause_class ?? cont.note ?? "—")} · precios stale=
                   {String(cont.stale_prices)} · acciones:{" "}
                   {Array.isArray(cont.recommended_actions)
                     ? (cont.recommended_actions as string[]).join(", ") || "—"

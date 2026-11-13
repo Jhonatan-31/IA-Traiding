@@ -32,12 +32,18 @@ Write-Host "== Preflight SSH ==" -ForegroundColor Cyan
 Invoke-Remote @"
 set -e
 echo HOST=`$(hostname)
+# Redeploy-safe: 8090 may already belong to ia-bot-trading-dashboard
 if ss -tlnp 2>/dev/null | grep -q ':8090'; then
-  echo 'ERROR: puerto 8090 ya en uso'
-  ss -tlnp | grep ':8090' || true
-  exit 2
+  if docker ps --format '{{.Names}}' | grep -q 'ia-bot-trading-dashboard'; then
+    echo '8090 owned by ia-bot-trading-dashboard — redeploy OK'
+  else
+    echo 'ERROR: puerto 8090 en uso por otro proceso'
+    ss -tlnp | grep ':8090' || true
+    exit 2
+  fi
+else
+  echo '8090 libre OK'
 fi
-echo '8090 libre OK'
 echo '--- baseline consultate/evs ---'
 docker ps --format '{{.Names}} {{.Status}}' | grep -E 'consultate-|evs-' || echo '(ninguno listado)'
 mkdir -p '$RemoteDir' '$RemoteDir/data/market_history'
@@ -89,7 +95,24 @@ test -f deploy/ebz/docker-compose.yml
 
 if (-not $SkipBuild) {
   Write-Host "== docker compose up -d --build (solo ia-bot-trading) ==" -ForegroundColor Cyan
-  Invoke-Remote "cd '$RemoteDir' && docker compose -p ia-bot-trading -f $ComposeRel --env-file .env up -d --build"
+  $commit = (git -C $RepoRoot rev-parse HEAD).Trim()
+  Invoke-Remote @"
+set -e
+cd '$RemoteDir'
+# Record deploy commit without printing secrets
+if grep -q '^DEPLOY_GIT_COMMIT=' .env; then
+  sed -i "s/^DEPLOY_GIT_COMMIT=.*/DEPLOY_GIT_COMMIT=$commit/" .env
+else
+  echo "DEPLOY_GIT_COMMIT=$commit" >> .env
+fi
+docker compose -p ia-bot-trading -f $ComposeRel --env-file .env up -d --build
+# Persist deploy meta inside paper DB (best-effort)
+docker compose -p ia-bot-trading -f $ComposeRel --env-file .env exec -T db \
+  psql -U paper -d paper -c "CREATE TABLE IF NOT EXISTS deploy_meta(id INTEGER PRIMARY KEY CHECK (id=1), git_commit TEXT, deployed_at TIMESTAMPTZ, notes TEXT, updated_at TIMESTAMPTZ DEFAULT NOW()); INSERT INTO deploy_meta(id, git_commit, deployed_at, notes) VALUES (1, '$commit', NOW(), 'deploy_trading_ebz') ON CONFLICT (id) DO UPDATE SET git_commit=EXCLUDED.git_commit, deployed_at=EXCLUDED.deployed_at, notes=EXCLUDED.notes, updated_at=NOW();" \
+  || echo 'deploy_meta update skipped'
+# Safety: never touch foreign stacks
+docker ps --format '{{.Names}} {{.Status}}' | grep -E 'consultate-|evs-' || true
+"@
 }
 
 Write-Host "== Postflight ==" -ForegroundColor Cyan

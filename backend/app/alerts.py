@@ -235,6 +235,42 @@ def evaluate_alerts(conn_factory, risk_report: dict[str, Any], system: dict[str,
             )
         )
 
+        # AE: continuity / protection alerts from continuity_center if present
+        for item in system.get("critical_alerts") or []:
+            sev = str(item.get("severity") or "WARNING").upper()
+            if sev == "CRITICAL":
+                severity = "CRITICAL"
+            elif sev in ("ERROR", "WARNING"):
+                severity = "WARNING"
+            else:
+                severity = "INFO"
+            code = str(item.get("id") or "CONTINUITY")[:64]
+            checks.append(
+                (
+                    True,
+                    {
+                        "severity": severity,
+                        "code": code,
+                        "title": str(item.get("message") or code)[:200],
+                        "detail": str(item)[:1000],
+                        "fingerprint": f"CONT::{code}",
+                    },
+                )
+            )
+
+        # Resolve continuity fingerprints not currently active
+        active_fps = {
+            f"CONT::{str(i.get('id'))}" for i in (system.get("critical_alerts") or []) if i.get("id")
+        }
+        open_cont = list(
+            c.execute(
+                "SELECT fingerprint FROM alerts WHERE status='OPEN' AND fingerprint LIKE 'CONT::%'"
+            )
+        )
+        for row in open_cont:
+            if row["fingerprint"] not in active_fps:
+                resolve_alert(c.execute, row["fingerprint"])
+
         for active, payload in checks:
             if active:
                 upsert_open_alert(c.execute, **payload)
