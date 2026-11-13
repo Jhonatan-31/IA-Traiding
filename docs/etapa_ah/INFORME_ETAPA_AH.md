@@ -51,8 +51,10 @@ A/B STOPPED · PAPER_ONLY · sin cambios de estrategias.
 | Ítem | Valor |
 |------|--------|
 | Checkpoint previo | `checkpoint-etapa-ah-pre-20261113_152057` |
+| Commit | `66c7831` |
 | Tag | `checkpoint-etapa-ah` |
 | Auth prod | `DASHBOARD_READ_AUTH=0` |
+| Deploy | OK · auth OFF · system/reliability 200 |
 | Rollback | poner `DASHBOARD_READ_AUTH=0` (no downgrade AD–AG) |
 
 ## H. ACTIVACIÓN FUTURA
