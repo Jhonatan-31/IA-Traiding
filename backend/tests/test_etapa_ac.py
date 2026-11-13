@@ -48,8 +48,8 @@ def test_parse_klines_ignores_extra_columns():
     assert rows[0]["volume"] == 12.5
 
 
-def test_ac_p0_patterns_still_present_documented():
-    """Regresión documental: paths P0 deben seguir visibles hasta etapa de fix."""
+def test_ac_p0_patterns_remediated_in_ad():
+    """AC P0 documentados; AD debe haber mitigado early-return y compra no atómica."""
     import inspect
 
     from app.active import engine as active_engine
@@ -58,14 +58,17 @@ def test_ac_p0_patterns_still_present_documented():
     from app.market_stream import aggregator as agg
 
     demo_src = inspect.getsource(demo_engine._try_buy)
-    assert "position_not_created" in demo_src
-    assert "cash-%s" in demo_src or "cash = cash" in demo_src or "SET cash" in demo_src
+    assert "SAVEPOINT ad_buy_atomic" in demo_src
+    assert "buy_atomic_rollback" in demo_src
+    assert "all_in_price_no_double_fee" in demo_src
     act_src = inspect.getsource(active_engine.run_cycle)
-    assert "b_execution_not_authorized" in act_src
-    # Flag actual True; el defecto es el early-return estructural
+    assert "b_entries_not_authorized" in act_src
+    assert "protective_exits_still_evaluated" in act_src
+    assert 'b_execution_not_authorized' not in act_src
     assert B_EXECUTION_AUTHORIZED is True
-    assert "if not B_EXECUTION_AUTHORIZED" in act_src
     assert getattr(agg, "_MAX_SEEN_IDS", 0) == 4096
+    buy_src = inspect.getsource(active_engine._try_buy)
+    assert "SAVEPOINT ad_buy_atomic" in buy_src
 
 
 def test_reconcile_ab_if_artifact_present():

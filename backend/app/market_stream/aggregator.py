@@ -1,6 +1,7 @@
 """Trade → forming candle aggregation (visualization only; not for SMA/Shadow signals)."""
 from __future__ import annotations
 
+from collections import OrderedDict
 from dataclasses import dataclass, field
 from typing import Any
 
@@ -18,7 +19,8 @@ INTERVAL_MS: dict[str, int] = {
     "1d": 86_400_000,
 }
 
-# Bounded dedupe window per forming candle
+# Bounded LRU dedupe window per forming candle (OrderedDict preserves insert order).
+# Eviction drops oldest ids first — never an arbitrary half of a set (AC-F14).
 _MAX_SEEN_IDS = 4_096
 
 
@@ -43,7 +45,7 @@ class FormingCandle:
     trade_count: int = 0
     is_closed: bool = False
     source: str = "trade"
-    seen_ids: set[int] = field(default_factory=set)
+    seen_ids: OrderedDict[int, None] = field(default_factory=OrderedDict)
     volume_mode: str = "trade_sum"  # trade_sum | kline_abs
 
     def to_msg(self, *, extra: dict[str, Any] | None = None) -> dict[str, Any]:
@@ -126,7 +128,7 @@ class CandleAggregator:
                 trade_count=1,
                 is_closed=False,
                 source="trade",
-                seen_ids={trade_id},
+                seen_ids=OrderedDict([(trade_id, None)]),
                 volume_mode="trade_sum",
             )
             self._candles[k] = cur
@@ -145,10 +147,9 @@ class CandleAggregator:
         cur.last_trade_time_ms = trade_time
         cur.trade_count += 1
         cur.source = "trade"
-        cur.seen_ids.add(trade_id)
-        if len(cur.seen_ids) > _MAX_SEEN_IDS:
-            # drop arbitrary half by rebuild (ids are roughly sequential)
-            cur.seen_ids = set(sorted(cur.seen_ids)[-_MAX_SEEN_IDS // 2 :])
+        cur.seen_ids[trade_id] = None
+        while len(cur.seen_ids) > _MAX_SEEN_IDS:
+            cur.seen_ids.popitem(last=False)  # evict oldest
         return cur
 
     def apply_kline(self, kline: dict[str, Any]) -> FormingCandle | None:

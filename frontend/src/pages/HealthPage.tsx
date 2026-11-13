@@ -134,6 +134,71 @@ export default function HealthPage() {
       </div>
 
       <div className="card" style={{ marginTop: 14 }}>
+        <h3>Runners A/B y continuidad (evidencia real)</h3>
+        {(() => {
+          const demo = comps.demo_runner;
+          const active = comps.active_runner;
+          const cont = (system as { continuity?: Record<string, unknown> } | null)?.continuity;
+          const crit = (
+            (system as { critical_alerts?: Array<Record<string, unknown>> } | null)
+              ?.critical_alerts || []
+          );
+          const dEv = (demo?.evidence || {}) as Record<string, unknown>;
+          const aEv = (active?.evidence || {}) as Record<string, unknown>;
+          return (
+            <>
+              <p className="muted" style={{ fontSize: 12 }}>
+                Contenedor Up ≠ saludable. Sin posiciones ≠ supervisor funcionando.
+                Huecos de heartbeat no afirman cobertura SL/TP continua.
+              </p>
+              <p>
+                Demo (A):{" "}
+                <span className={`pill ${pillFor(demo?.status)}`}>
+                  {demo?.status || "UNKNOWN"}
+                </span>{" "}
+                bot={String(dEv.bot_status ?? "—")} · pos={String(dEv.open_positions ?? "—")} ·
+                última eval {fmtTime(dEv.last_eval_at as string)} · hb edad{" "}
+                {String(dEv.heartbeat_age_s ?? "—")} s
+              </p>
+              <p>
+                Active (B):{" "}
+                <span className={`pill ${pillFor(active?.status)}`}>
+                  {active?.status || "UNKNOWN"}
+                </span>{" "}
+                bot={String(aEv.bot_status ?? "—")} · pos={String(aEv.open_positions ?? "—")} ·
+                última eval {fmtTime(aEv.last_eval_at as string)} · hb edad{" "}
+                {String(aEv.heartbeat_age_s ?? "—")} s
+              </p>
+              {cont ? (
+                <p>
+                  Continuidad: {String(cont.status)} · gap={String(cont.gap_s ?? "—")}s ·
+                  suspend sospechado={String(cont.host_suspend_suspected)} · precios stale=
+                  {String(cont.stale_prices)} · acciones:{" "}
+                  {Array.isArray(cont.recommended_actions)
+                    ? (cont.recommended_actions as string[]).join(", ") || "—"
+                    : "—"}
+                </p>
+              ) : null}
+              {crit.length > 0 ? (
+                <ul style={{ marginTop: 8, paddingLeft: 18 }}>
+                  {crit.map((c) => (
+                    <li key={String(c.id)}>
+                      <span className={`pill ${pillFor(String(c.severity))}`}>
+                        {String(c.severity)}
+                      </span>{" "}
+                      {String(c.message)}
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p className="muted">Sin alertas críticas de runners en este check.</p>
+              )}
+            </>
+          );
+        })()}
+      </div>
+
+      <div className="card" style={{ marginTop: 14 }}>
         <h3>Shadow Scheduler (evidencia de heartbeat, no solo contenedor)</h3>
         {(() => {
           const sc = comps.shadow_scheduler;

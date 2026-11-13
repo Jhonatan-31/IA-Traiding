@@ -110,15 +110,20 @@ async def run_cycle(db_factory, *, every_seconds: int = 60) -> dict[str, Any]:
         "strategy": "B",
         "policy_version": POLICY_B_VERSION,
     }
-    if not B_EXECUTION_AUTHORIZED:
-        summary["ok"] = False
-        summary["rejects"].append({"reason": "b_execution_not_authorized"})
-        return summary
+    # AD-P0-02: authorization gates NEW ENTRIES only.
+    # Protective exits for existing positions must still evaluate when unauthorized.
+    entries_authorized = bool(B_EXECUTION_AUTHORIZED)
+    summary["entries_authorized"] = entries_authorized
+    if not entries_authorized:
+        summary["rejects"].append({
+            "reason": "b_entries_not_authorized",
+            "note": "protective_exits_still_evaluated",
+        })
 
     with db_factory() as c:
         ensure_active_schema(c.execute)
         st = c.execute("SELECT * FROM active_state WHERE id=1").fetchone()
-        allow_entries = bool(st and st["status"] == "RUNNING")
+        allow_entries = bool(st and st["status"] == "RUNNING") and entries_authorized
         summary["bot_status"] = (st or {}).get("status")
         summary["allow_entries"] = allow_entries
 
@@ -246,7 +251,9 @@ async def run_cycle(db_factory, *, every_seconds: int = 60) -> dict[str, Any]:
                 mark = float(b["close"])
                 corr = uuid.uuid4()
                 action, reason = evaluate_entry(b)
-                if not allow_entries:
+                if not entries_authorized:
+                    action, reason = "HOLD", "b_entries_not_authorized"
+                elif not allow_entries:
                     action, reason = "HOLD", "bot_stopped_entries_blocked"
                 elif pause_buys:
                     action, reason = "HOLD", "peak_drawdown_pause"
@@ -272,6 +279,7 @@ async def run_cycle(db_factory, *, every_seconds: int = 60) -> dict[str, Any]:
                     c.execute, sym, action, mark, b, reason, cycle_id, corr,
                     risk={
                         "allow_entries": allow_entries,
+                        "entries_authorized": entries_authorized,
                         "pause_buys": pause_buys,
                         "open_positions": len(pos_by),
                         "entries_hour": entries_hour,
@@ -324,6 +332,8 @@ async def run_cycle(db_factory, *, every_seconds: int = 60) -> dict[str, Any]:
 
 
 async def _try_buy(client, execute, symbol, mark, candle_ms, decision_id, cash, invested, assumptions, corr):
+    if not B_EXECUTION_AUTHORIZED:
+        return {"ok": False, "reason": "b_entries_not_authorized", "symbol": symbol}
     st = execute("SELECT status FROM active_state WHERE id=1").fetchone()
     if not st or st["status"] != "RUNNING":
         return {"ok": False, "reason": "bot_stopped_entries_blocked", "symbol": symbol}
@@ -364,14 +374,21 @@ async def _try_buy(client, execute, symbol, mark, candle_ms, decision_id, cash, 
     if qty < min_qty or qty * px < min_notional:
         return {"ok": False, "reason": "lot_or_notional_reject", "symbol": symbol, "qty": qty}
 
-    fee = qty * px * FEE_RATE
-    slip_cost = qty * px * SLIP_RATE
-    total = qty * px + fee
-    cash_now = _d(execute("SELECT cash FROM active_accounts WHERE id=%s", (ACCOUNT_B,)).fetchone()["cash"])
+    # px is all-in (fee baked in). Do not debit fee a second time.
+    fee = float(fill.get("fee_component") or 0.0) * qty
+    slip_cost = float(fill.get("slip_component") or 0.0) * qty
+    total = qty * px
+    cash_now = _d(
+        execute(
+            "SELECT cash FROM active_accounts WHERE id=%s FOR UPDATE",
+            (ACCOUNT_B,),
+        ).fetchone()["cash"]
+    )
     if _d(total) > cash_now:
         return {"ok": False, "reason": "insufficient_cash", "symbol": symbol}
 
     uid = str(uuid.uuid4())
+    execute("SAVEPOINT ad_buy_atomic")
     try:
         ord_row = execute(
             """INSERT INTO active_orders(
@@ -381,28 +398,55 @@ async def _try_buy(client, execute, symbol, mark, candle_ms, decision_id, cash, 
                RETURNING id""",
             (
                 uid, ACCOUNT_B, symbol, decision_id, candle_ms, mark, px, qty, fee, slip_cost,
-                json.dumps({"execution_class": fill.get("execution_class"), "paper_only": True, "corr": str(corr)}),
+                json.dumps({
+                    "execution_class": fill.get("execution_class"),
+                    "paper_only": True,
+                    "corr": str(corr),
+                    "cash_model": "all_in_price_no_double_fee",
+                    "ad_atomic": True,
+                }),
             ),
         ).fetchone()
+        debited = execute(
+            "UPDATE active_accounts SET cash=cash-%s WHERE id=%s AND cash >= %s RETURNING cash",
+            (_d(total), ACCOUNT_B, _d(total)),
+        ).fetchone()
+        if not debited:
+            raise RuntimeError("cash_debit_failed")
+        execute(
+            """INSERT INTO active_positions(account_id, symbol, qty, cost, entry_price, meta_json)
+               VALUES (%s,%s,%s,%s,%s,%s::jsonb)""",
+            (ACCOUNT_B, symbol, qty, qty * px, px, json.dumps({"decision_id": decision_id})),
+        )
+        if not execute(
+            "SELECT 1 FROM active_positions WHERE account_id=%s AND symbol=%s",
+            (ACCOUNT_B, symbol),
+        ).fetchone():
+            raise RuntimeError("position_not_created")
+        execute(
+            """INSERT INTO active_trades(account_id, order_id, symbol, side, qty, price, fee, slip, reason, correlation_id, meta_json)
+               VALUES (%s,%s,%s,'BUY',%s,%s,%s,%s,'active_b_buy',%s,%s::jsonb)""",
+            (ACCOUNT_B, ord_row["id"], symbol, qty, px, fee, slip_cost, str(corr), json.dumps({"ref": mark})),
+        )
+        execute("RELEASE SAVEPOINT ad_buy_atomic")
     except Exception as exc:
-        return {"ok": False, "reason": f"order_insert:{type(exc).__name__}", "symbol": symbol}
-
-    execute("UPDATE active_accounts SET cash=cash-%s WHERE id=%s", (_d(total), ACCOUNT_B))
-    execute(
-        """INSERT INTO active_positions(account_id, symbol, qty, cost, entry_price, meta_json)
-           VALUES (%s,%s,%s,%s,%s,%s::jsonb) ON CONFLICT DO NOTHING""",
-        (ACCOUNT_B, symbol, qty, qty * px, px, json.dumps({"decision_id": decision_id})),
-    )
-    if not execute(
-        "SELECT 1 FROM active_positions WHERE account_id=%s AND symbol=%s", (ACCOUNT_B, symbol)
-    ).fetchone():
-        return {"ok": False, "reason": "position_not_created", "symbol": symbol}
-    execute(
-        """INSERT INTO active_trades(account_id, order_id, symbol, side, qty, price, fee, slip, reason, correlation_id, meta_json)
-           VALUES (%s,%s,%s,'BUY',%s,%s,%s,%s,'active_b_buy',%s,%s::jsonb)""",
-        (ACCOUNT_B, ord_row["id"], symbol, qty, px, fee, slip_cost, str(corr), json.dumps({"ref": mark})),
-    )
-    return {"ok": True, "side": "BUY", "symbol": symbol, "qty": qty, "price": px, "fee": fee, "slip": slip_cost, "ref": mark}
+        execute("ROLLBACK TO SAVEPOINT ad_buy_atomic")
+        return {
+            "ok": False,
+            "reason": f"buy_atomic_rollback:{type(exc).__name__}:{exc}"[:180],
+            "symbol": symbol,
+        }
+    return {
+        "ok": True,
+        "side": "BUY",
+        "symbol": symbol,
+        "qty": qty,
+        "price": px,
+        "fee": fee,
+        "slip": slip_cost,
+        "ref": mark,
+        "cash_debited": total,
+    }
 
 
 async def _try_sell(client, execute, pos, mark, candle_ms, decision_id, reason, assumptions, corr):
@@ -418,10 +462,10 @@ async def _try_sell(client, execute, pos, mark, candle_ms, decision_id, reason, 
     if not fill.get("ok"):
         return {"ok": False, "reason": fill.get("reason") or "fill_model", "symbol": symbol}
     px = float(fill["price"])
-    proceeds = qty * px
-    fee = proceeds * FEE_RATE
-    slip_cost = proceeds * SLIP_RATE
-    net = proceeds - fee
+    # px already net of fee (all-in). Credit qty*px; record fee_component for reporting only.
+    fee = float(fill.get("fee_component") or 0.0) * qty
+    slip_cost = float(fill.get("slip_component") or 0.0) * qty
+    net = qty * px
     cost = float(pos["cost"])
     rpnl = net - cost
     uid = str(uuid.uuid4())
@@ -434,7 +478,12 @@ async def _try_sell(client, execute, pos, mark, candle_ms, decision_id, reason, 
                RETURNING id""",
             (
                 uid, ACCOUNT_B, symbol, decision_id, candle_ms, mark, px, qty, fee, slip_cost,
-                json.dumps({"exit_reason": reason, "paper_only": True, "corr": str(corr)}),
+                json.dumps({
+                    "exit_reason": reason,
+                    "paper_only": True,
+                    "corr": str(corr),
+                    "cash_model": "all_in_price_no_double_fee",
+                }),
             ),
         ).fetchone()
     except Exception as exc:

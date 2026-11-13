@@ -1,12 +1,17 @@
-"""Express dashboard API — read-only status + final report helpers."""
+"""Express dashboard API — read-only status + final report helpers.
+
+AD-SEC-01: no mutation routes without LAB_CONTROL_TOKEN.
+GET status/report remain read-only (ended experiment ledger).
+"""
 from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
 from typing import Any
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Depends, HTTPException
 
+from ..lab.auth import require_lab_token
 from . import ACCOUNT_ID, INITIAL_CASH
 from .policy import END_UTC, POLICY_DOC, POLICY_VERSION, is_ended, seconds_remaining
 from .schema import ensure_express_schema
@@ -171,6 +176,12 @@ async def express_status():
                 "does_not_touch_sma_lab_research": True,
                 "paper_only": True,
             },
+            "security": {
+                "mutations_allowed": False,
+                "control_requires_lab_token": True,
+                "read_only_get": True,
+                "note": "GET status/report are read-only; POST /control requires X-Lab-Token and refuses mutations (ENDED).",
+            },
         }
     )
 
@@ -197,3 +208,17 @@ async def express_report():
             "status": st.get("status"),
         },
     }
+
+
+@router.post("/control/{action}")
+async def express_control(action: str, _auth: str = Depends(require_lab_token)):
+    """AD-SEC-01: any express mutation path requires token and is refused (ENDED)."""
+    raise HTTPException(
+        status_code=410,
+        detail={
+            "error": "express_ended_mutations_disabled",
+            "action": action,
+            "mutations_allowed": False,
+            "note": "Express ledger is ENDED; control mutations are permanently disabled.",
+        },
+    )

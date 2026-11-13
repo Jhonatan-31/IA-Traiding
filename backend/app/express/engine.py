@@ -405,16 +405,21 @@ async def _try_buy(
             "min_qty": min_qty,
             "min_notional": min_notional,
         }
-    fee = qty * px * FEE_RATE
-    slip_cost = qty * px * SLIP_RATE
-    total = qty * px + fee
+    # px is all-in (fee baked in). Do not debit fee a second time (AD-FIN-01).
+    fee = float(fill.get("fee_component") or 0.0) * qty
+    slip_cost = float(fill.get("slip_component") or 0.0) * qty
+    total = qty * px
     cash_now = _d(
-        execute("SELECT cash FROM express_accounts WHERE id=%s", (ACCOUNT_ID,)).fetchone()["cash"]
+        execute(
+            "SELECT cash FROM express_accounts WHERE id=%s FOR UPDATE",
+            (ACCOUNT_ID,),
+        ).fetchone()["cash"]
     )
     if _d(total) > cash_now:
         return {"ok": False, "reason": "insufficient_cash", "symbol": symbol}
 
     uid = str(uuid.uuid4())
+    execute("SAVEPOINT ad_buy_atomic")
     try:
         ord_row = execute(
             """INSERT INTO express_orders(
@@ -433,35 +438,44 @@ async def _try_buy(
                 qty,
                 fee,
                 slip_cost,
-                json.dumps({"execution_class": fill.get("execution_class"), "paper_only": True}),
+                json.dumps({
+                    "execution_class": fill.get("execution_class"),
+                    "paper_only": True,
+                    "cash_model": "all_in_price_no_double_fee",
+                    "ad_atomic": True,
+                }),
             ),
         ).fetchone()
+        debited = execute(
+            "UPDATE express_accounts SET cash=cash-%s WHERE id=%s AND cash >= %s RETURNING cash",
+            (_d(total), ACCOUNT_ID, _d(total)),
+        ).fetchone()
+        if not debited:
+            raise RuntimeError("cash_debit_failed")
+        execute(
+            """INSERT INTO express_positions(account_id, symbol, qty, cost, entry_price, meta_json)
+               VALUES (%s,%s,%s,%s,%s,%s::jsonb)""",
+            (ACCOUNT_ID, symbol, qty, qty * px, px, json.dumps({"decision_id": decision_id})),
+        )
+        pos = execute(
+            "SELECT * FROM express_positions WHERE account_id=%s AND symbol=%s",
+            (ACCOUNT_ID, symbol),
+        ).fetchone()
+        if not pos:
+            raise RuntimeError("position_not_created")
+        execute(
+            """INSERT INTO express_trades(account_id, order_id, symbol, side, qty, price, fee, slip, reason, meta_json)
+               VALUES (%s,%s,%s,'BUY',%s,%s,%s,%s,'express_policy_buy',%s::jsonb)""",
+            (ACCOUNT_ID, ord_row["id"], symbol, qty, px, fee, slip_cost, json.dumps({"ref": mark})),
+        )
+        execute("RELEASE SAVEPOINT ad_buy_atomic")
     except Exception as exc:
-        return {"ok": False, "reason": f"order_insert:{type(exc).__name__}", "symbol": symbol}
-
-    execute(
-        "UPDATE express_accounts SET cash=cash-%s WHERE id=%s",
-        (_d(total), ACCOUNT_ID),
-    )
-    execute(
-        """INSERT INTO express_positions(account_id, symbol, qty, cost, entry_price, meta_json)
-           VALUES (%s,%s,%s,%s,%s,%s::jsonb)
-           ON CONFLICT (account_id, symbol) DO NOTHING""",
-        (ACCOUNT_ID, symbol, qty, qty * px, px, json.dumps({"decision_id": decision_id})),
-    )
-    # If conflict (duplicate symbol), rollback-ish: should not happen due to pre-check
-    pos = execute(
-        "SELECT * FROM express_positions WHERE account_id=%s AND symbol=%s",
-        (ACCOUNT_ID, symbol),
-    ).fetchone()
-    if not pos:
-        return {"ok": False, "reason": "position_not_created_duplicate", "symbol": symbol}
-
-    execute(
-        """INSERT INTO express_trades(account_id, order_id, symbol, side, qty, price, fee, slip, reason, meta_json)
-           VALUES (%s,%s,%s,'BUY',%s,%s,%s,%s,'express_policy_buy',%s::jsonb)""",
-        (ACCOUNT_ID, ord_row["id"], symbol, qty, px, fee, slip_cost, json.dumps({"ref": mark})),
-    )
+        execute("ROLLBACK TO SAVEPOINT ad_buy_atomic")
+        return {
+            "ok": False,
+            "reason": f"buy_atomic_rollback:{type(exc).__name__}:{exc}"[:180],
+            "symbol": symbol,
+        }
     return {
         "ok": True,
         "side": "BUY",
@@ -471,6 +485,7 @@ async def _try_buy(
         "fee": fee,
         "slip": slip_cost,
         "ref": mark,
+        "cash_debited": total,
     }
 
 
@@ -493,10 +508,9 @@ async def _try_sell(
     if not fill.get("ok"):
         return {"ok": False, "reason": fill.get("reason") or "fill_model", "symbol": symbol}
     px = float(fill["price"])
-    proceeds = qty * px
-    fee = proceeds * FEE_RATE
-    slip_cost = proceeds * SLIP_RATE
-    net = proceeds - fee
+    fee = float(fill.get("fee_component") or 0.0) * qty
+    slip_cost = float(fill.get("slip_component") or 0.0) * qty
+    net = qty * px  # all-in net; fee already in px
     cost = float(pos["cost"])
     rpnl = net - cost
     uid = str(uuid.uuid4())

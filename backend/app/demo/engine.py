@@ -392,14 +392,23 @@ async def _try_buy(client, execute, symbol, mark, candle_ms, decision_id, cash, 
     if qty < min_qty or qty * px < min_notional:
         return {"ok": False, "reason": "lot_or_notional_reject", "symbol": symbol, "qty": qty}
 
-    fee = qty * px * FEE_RATE
-    slip_cost = qty * px * SLIP_RATE
-    total = qty * px + fee
-    cash_now = _d(execute("SELECT cash FROM demo_accounts WHERE id=%s", (ACCOUNT_ID,)).fetchone()["cash"])
+    # px from estimate_fill_price is all-in (fee already in price). Do NOT add fee again to cash.
+    fee = float(fill.get("fee_component") or 0.0) * qty
+    slip_cost = float(fill.get("slip_component") or 0.0) * qty
+    total = qty * px
+    # Lock cash row for concurrency safety within the open transaction
+    cash_now = _d(
+        execute(
+            "SELECT cash FROM demo_accounts WHERE id=%s FOR UPDATE",
+            (ACCOUNT_ID,),
+        ).fetchone()["cash"]
+    )
     if _d(total) > cash_now:
         return {"ok": False, "reason": "insufficient_cash", "symbol": symbol}
 
     uid = str(uuid.uuid4())
+    # Atomic buy: order + cash + position + trade or full rollback via SAVEPOINT
+    execute("SAVEPOINT ad_buy_atomic")
     try:
         ord_row = execute(
             """INSERT INTO demo_orders(
@@ -409,28 +418,44 @@ async def _try_buy(client, execute, symbol, mark, candle_ms, decision_id, cash, 
                RETURNING id""",
             (
                 uid, ACCOUNT_ID, symbol, decision_id, candle_ms, mark, px, qty, fee, slip_cost, str(corr),
-                json.dumps({"execution_class": fill.get("execution_class"), "paper_only": True}),
+                json.dumps({
+                    "execution_class": fill.get("execution_class"),
+                    "paper_only": True,
+                    "cash_model": "all_in_price_no_double_fee",
+                    "ad_atomic": True,
+                }),
             ),
         ).fetchone()
+        debited = execute(
+            "UPDATE demo_accounts SET cash=cash-%s WHERE id=%s AND cash >= %s RETURNING cash",
+            (_d(total), ACCOUNT_ID, _d(total)),
+        ).fetchone()
+        if not debited:
+            raise RuntimeError("cash_debit_failed")
+        execute(
+            """INSERT INTO demo_positions(account_id, symbol, qty, cost, entry_price, meta_json)
+               VALUES (%s,%s,%s,%s,%s,%s::jsonb)""",
+            (ACCOUNT_ID, symbol, qty, qty * px, px, json.dumps({"decision_id": decision_id})),
+        )
+        if not execute(
+            "SELECT 1 FROM demo_positions WHERE account_id=%s AND symbol=%s",
+            (ACCOUNT_ID, symbol),
+        ).fetchone():
+            raise RuntimeError("position_not_created")
+        execute(
+            """INSERT INTO demo_trades(account_id, order_id, symbol, side, qty, price, fee, slip, reason, correlation_id, meta_json)
+               VALUES (%s,%s,%s,'BUY',%s,%s,%s,%s,'demo_policy_buy',%s,%s::jsonb)""",
+            (ACCOUNT_ID, ord_row["id"], symbol, qty, px, fee, slip_cost, str(corr), json.dumps({"ref": mark})),
+        )
+        execute("RELEASE SAVEPOINT ad_buy_atomic")
     except Exception as exc:
-        return {"ok": False, "reason": f"order_insert:{type(exc).__name__}", "symbol": symbol}
-
-    execute("UPDATE demo_accounts SET cash=cash-%s WHERE id=%s", (_d(total), ACCOUNT_ID))
-    execute(
-        """INSERT INTO demo_positions(account_id, symbol, qty, cost, entry_price, meta_json)
-           VALUES (%s,%s,%s,%s,%s,%s::jsonb) ON CONFLICT DO NOTHING""",
-        (ACCOUNT_ID, symbol, qty, qty * px, px, json.dumps({"decision_id": decision_id})),
-    )
-    if not execute(
-        "SELECT 1 FROM demo_positions WHERE account_id=%s AND symbol=%s", (ACCOUNT_ID, symbol)
-    ).fetchone():
-        return {"ok": False, "reason": "position_not_created", "symbol": symbol}
-    execute(
-        """INSERT INTO demo_trades(account_id, order_id, symbol, side, qty, price, fee, slip, reason, correlation_id, meta_json)
-           VALUES (%s,%s,%s,'BUY',%s,%s,%s,%s,'demo_policy_buy',%s,%s::jsonb)""",
-        (ACCOUNT_ID, ord_row["id"], symbol, qty, px, fee, slip_cost, str(corr), json.dumps({"ref": mark})),
-    )
-    return {"ok": True, "side": "BUY", "symbol": symbol, "qty": qty, "price": px, "fee": fee, "slip": slip_cost, "ref": mark}
+        execute("ROLLBACK TO SAVEPOINT ad_buy_atomic")
+        return {
+            "ok": False,
+            "reason": f"buy_atomic_rollback:{type(exc).__name__}:{exc}"[:180],
+            "symbol": symbol,
+        }
+    return {"ok": True, "side": "BUY", "symbol": symbol, "qty": qty, "price": px, "fee": fee, "slip": slip_cost, "ref": mark, "cash_debited": total}
 
 
 async def _try_sell(client, execute, pos, mark, candle_ms, decision_id, reason, assumptions, corr):
@@ -446,10 +471,10 @@ async def _try_sell(client, execute, pos, mark, candle_ms, decision_id, reason, 
     if not fill.get("ok"):
         return {"ok": False, "reason": fill.get("reason") or "fill_model", "symbol": symbol}
     px = float(fill["price"])
-    proceeds = qty * px
-    fee = proceeds * FEE_RATE
-    slip_cost = proceeds * SLIP_RATE
-    net = proceeds - fee
+    # px already net of fee (all-in). Credit qty*px; record fee_component for reporting only.
+    fee = float(fill.get("fee_component") or 0.0) * qty
+    slip_cost = float(fill.get("slip_component") or 0.0) * qty
+    net = qty * px
     cost = float(pos["cost"])
     rpnl = net - cost
     uid = str(uuid.uuid4())
@@ -462,7 +487,11 @@ async def _try_sell(client, execute, pos, mark, candle_ms, decision_id, reason, 
                RETURNING id""",
             (
                 uid, ACCOUNT_ID, symbol, decision_id, candle_ms, mark, px, qty, fee, slip_cost, str(corr),
-                json.dumps({"exit_reason": reason, "paper_only": True}),
+                json.dumps({
+                    "exit_reason": reason,
+                    "paper_only": True,
+                    "cash_model": "all_in_price_no_double_fee",
+                }),
             ),
         ).fetchone()
     except Exception as exc:

@@ -718,6 +718,27 @@ async def system():
         sched = c.execute(
             "SELECT * FROM shadow_scheduler_state WHERE id=1"
         ).fetchone()
+        demo_st = None
+        active_st = None
+        try:
+            demo_st = c.execute("SELECT * FROM demo_state WHERE id=1").fetchone()
+        except Exception:
+            demo_st = None
+        try:
+            active_st = c.execute("SELECT * FROM active_state WHERE id=1").fetchone()
+        except Exception:
+            active_st = None
+        demo_pos_n = 0
+        active_pos_n = 0
+        try:
+            demo_pos_n = int(
+                c.execute("SELECT COUNT(*) AS n FROM demo_positions").fetchone()["n"]
+            )
+            active_pos_n = int(
+                c.execute("SELECT COUNT(*) AS n FROM active_positions").fetchone()["n"]
+            )
+        except Exception:
+            pass
         last_pred = c.execute(
             """SELECT MAX(d.created_at) AS at FROM prospect_decisions d
                JOIN prospect_experiments e ON e.id=d.experiment_id
@@ -737,9 +758,23 @@ async def system():
             )
         )
 
+    from .ops.continuity import classify_gap, heartbeat_gap_seconds, reconcile_after_gap
+
     scan_age = _age_seconds(last_scan["at"] if last_scan else None)
     price_age_s = _age_seconds(price_age["at"] if price_age else None)
     hb_age = _age_seconds(sched["heartbeat_at"] if sched else None)
+    demo_hb_age = heartbeat_gap_seconds(demo_st["heartbeat_at"] if demo_st else None)
+    active_hb_age = heartbeat_gap_seconds(active_st["heartbeat_at"] if active_st else None)
+    demo_gap = classify_gap(demo_hb_age, warn_s=180, crit_s=600, expected_every_s=60)
+    active_gap = classify_gap(active_hb_age, warn_s=180, crit_s=600, expected_every_s=60)
+    continuity = reconcile_after_gap(
+        gap_s=max(
+            [x for x in (demo_hb_age, active_hb_age, hb_age) if x is not None],
+            default=None,
+        ),
+        price_age_s=price_age_s,
+        open_positions=demo_pos_n + active_pos_n,
+    )
     # Evidence-based: container up ≠ healthy. Heartbeat must be fresh.
     if not sched or not sched.get("heartbeat_at"):
         sched_status = "UNKNOWN"
@@ -807,12 +842,65 @@ async def system():
                 "note": "Salud por heartbeat DB, no por contenedor Docker.",
             },
         },
+        "demo_runner": {
+            "status": demo_gap["status"] if demo_st else "UNKNOWN",
+            "evidence": {
+                "bot_status": (demo_st or {}).get("status"),
+                "heartbeat_at": serial(demo_st["heartbeat_at"]) if demo_st and demo_st.get("heartbeat_at") else None,
+                "heartbeat_age_s": demo_hb_age,
+                "last_eval_at": serial(demo_st["last_eval_at"]) if demo_st and demo_st.get("last_eval_at") else None,
+                "open_positions": demo_pos_n,
+                "gap": demo_gap,
+                "note": (
+                    "Sin posiciones ≠ supervisor sano. "
+                    "Si runner detenido, no afirmar protecciones activas."
+                ),
+            },
+        },
+        "active_runner": {
+            "status": active_gap["status"] if active_st else "UNKNOWN",
+            "evidence": {
+                "bot_status": (active_st or {}).get("status"),
+                "heartbeat_at": serial(active_st["heartbeat_at"]) if active_st and active_st.get("heartbeat_at") else None,
+                "heartbeat_age_s": active_hb_age,
+                "last_eval_at": serial(active_st["last_eval_at"]) if active_st and active_st.get("last_eval_at") else None,
+                "open_positions": active_pos_n,
+                "gap": active_gap,
+                "note": (
+                    "Entradas gated por B_EXECUTION_AUTHORIZED + RUNNING; "
+                    "salidas protectoras deben evaluarse aunque entradas bloqueadas."
+                ),
+            },
+        },
     }
     return serial(
         {
             "mode": "PAPER_ONLY",
             "checked_at": datetime.now(timezone.utc).isoformat(),
             "components": components,
+            "continuity": continuity,
+            "critical_alerts": [
+                a
+                for a in [
+                    {
+                        "id": "demo_runner_gap",
+                        "severity": demo_gap["status"],
+                        "message": f"demo heartbeat gap={demo_gap.get('gap_s')}s",
+                        "open_positions": demo_pos_n,
+                    }
+                    if demo_gap["status"] in ("WARNING", "CRITICAL", "UNKNOWN")
+                    else None,
+                    {
+                        "id": "active_runner_gap",
+                        "severity": active_gap["status"],
+                        "message": f"active heartbeat gap={active_gap.get('gap_s')}s",
+                        "open_positions": active_pos_n,
+                    }
+                    if active_gap["status"] in ("WARNING", "CRITICAL", "UNKNOWN")
+                    else None,
+                ]
+                if a
+            ],
             "engine": engine,
             "last_scan": last_scan,
             "last_trade_at": last_trade["at"] if last_trade else None,
