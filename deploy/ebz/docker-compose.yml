@@ -1,0 +1,127 @@
+# AI Trading Bot Pro — stack aislado en servidor EBZ
+# Proyecto: ia-bot-trading  |  Dashboard: 0.0.0.0:8090
+# NO compartir red/volúmenes con consultate ni EVS.
+# Prohibido: docker compose down -v / volume prune / system prune en este host.
+name: ia-bot-trading
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: paper
+      POSTGRES_USER: paper
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD}
+    volumes:
+      - paper_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U paper -d paper"]
+      interval: 5s
+      retries: 15
+      timeout: 4s
+    # Sin ports: — Postgres solo en red interna del proyecto
+
+  api:
+    build: ../../backend
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://paper:${DB_PASSWORD:?Set DB_PASSWORD}@db:5432/paper
+      ML_ARTIFACT_DIR: /artifacts
+      MARKET_HISTORY_DIR: /artifacts/history
+      LAB_CONTROL_TOKEN: ${LAB_CONTROL_TOKEN:?Set LAB_CONTROL_TOKEN}
+    volumes:
+      - ml_artifacts:/artifacts
+      - ../../data/market_history:/artifacts/history
+    depends_on:
+      db:
+        condition: service_healthy
+
+  worker:
+    build: ../../backend
+    command: ["python", "-m", "app.worker"]
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://paper:${DB_PASSWORD:?Set DB_PASSWORD}@db:5432/paper
+      SCAN_LIMIT: ${SCAN_LIMIT:-25}
+      SCAN_EVERY_SECONDS: ${SCAN_EVERY_SECONDS:-3600}
+      ML_ARTIFACT_DIR: /artifacts
+    volumes:
+      - ml_artifacts:/artifacts
+    depends_on:
+      db:
+        condition: service_healthy
+
+  market-stream:
+    build: ../../backend
+    command: ["python", "-m", "app.market_stream.server"]
+    restart: unless-stopped
+    environment:
+      TZ: UTC
+
+  dashboard:
+    build: ../../frontend
+    restart: unless-stopped
+    ports:
+      - "0.0.0.0:8090:8080"
+    depends_on: [api, market-stream]
+
+  shadow-scheduler:
+    build: ../../backend
+    command: ["python", "-m", "app.prospect.scheduler"]
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://paper:${DB_PASSWORD:?Set DB_PASSWORD}@db:5432/paper
+      ML_ARTIFACT_DIR: /artifacts
+      SHADOW_EVERY_SECONDS: ${SHADOW_EVERY_SECONDS:-300}
+      TZ: UTC
+    volumes:
+      - ml_artifacts:/artifacts
+    depends_on:
+      db:
+        condition: service_healthy
+
+  trade-executor:
+    build: ../../backend
+    command: ["python", "-m", "app.lab.runner"]
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://paper:${DB_PASSWORD:?Set DB_PASSWORD}@db:5432/paper
+      ML_ARTIFACT_DIR: /artifacts
+      LAB_EVERY_SECONDS: ${LAB_EVERY_SECONDS:-300}
+      LAB_CONTROL_TOKEN: ${LAB_CONTROL_TOKEN:?Set LAB_CONTROL_TOKEN}
+      TZ: UTC
+    volumes:
+      - ml_artifacts:/artifacts
+    depends_on:
+      db:
+        condition: service_healthy
+
+  demo-runner:
+    build: ../../backend
+    command: ["python", "-m", "app.demo.runner"]
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://paper:${DB_PASSWORD:?Set DB_PASSWORD}@db:5432/paper
+      DEMO_EVERY_SECONDS: ${DEMO_EVERY_SECONDS:-60}
+      TZ: UTC
+    depends_on:
+      db:
+        condition: service_healthy
+
+  active-runner:
+    build: ../../backend
+    command: ["python", "-m", "app.active.runner"]
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://paper:${DB_PASSWORD:?Set DB_PASSWORD}@db:5432/paper
+      ACTIVE_EVERY_SECONDS: ${ACTIVE_EVERY_SECONDS:-60}
+      TZ: UTC
+    depends_on:
+      db:
+        condition: service_healthy
+
+volumes:
+  paper_data:
+    name: ia-bot-trading_paper_data
+  ml_artifacts:
+    name: ia-bot-trading_ml_artifacts
