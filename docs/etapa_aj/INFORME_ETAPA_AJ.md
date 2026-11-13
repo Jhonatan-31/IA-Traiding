@@ -98,7 +98,7 @@ Rollback C: `DASHBOARD_READ_AUTH=0` + recreate api/dashboard.
 
 | Artefacto | Valor |
 |-----------|-------|
-| Commit | `8b3b404` |
+| Commit | `1237d00` |
 | Tag | `checkpoint-etapa-aj` |
 | Checkpoint pre | `checkpoint-etapa-aj-pre-20261113_154219` |
 | Deploy previo EBZ | `e19e96f` (auth OFF; docs AJ no cambian acceso) |
