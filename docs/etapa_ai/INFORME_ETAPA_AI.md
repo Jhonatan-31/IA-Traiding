@@ -2,6 +2,7 @@
 
 **Fecha:** 2026-11-13  
 **Checkpoint previo:** `checkpoint-etapa-ai-pre-20261113_153517`  
+**Commit AI:** e19e96f  
 **Base AH:** `66c7831` / `checkpoint-etapa-ah`
 
 ---
@@ -42,6 +43,17 @@ Inicio AF `2026-11-13T16:58:23Z` · 24h cov ~0.96 · EVIDENCIA_EN_ACUMULACION ·
 ## CARTERAS
 
 A/B STOPPED · PAPER_ONLY · sin órdenes reales.
+
+## ENTREGA
+
+| Ítem | Valor |
+|------|--------|
+| Commit | e19e96f |
+| Tag | checkpoint-etapa-ai |
+| Checkpoint previo | checkpoint-etapa-ai-pre-20261113_153517 |
+| Deploy | OK · auth OFF · A/B STOPPED |
+| Tests AI+AH+AG+AF | 34 passed |
+| Rollback | DASHBOARD_READ_AUTH=0 (no downgrade AD–AH) |
 
 ## DECISIONES DEL USUARIO
 
