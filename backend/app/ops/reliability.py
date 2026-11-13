@@ -174,6 +174,9 @@ def window_stats(
         counts[o] += 1
 
     valid = len(rows)
+    # Early accumulation: if elapsed < one interval but samples exist, expected ≥ valid.
+    if expected == 0 and valid > 0:
+        expected = valid
     missing = max(0, expected - valid)
     # Coverage: fraction of expected slots with a sample
     coverage = (valid / expected) if expected > 0 else 0.0
