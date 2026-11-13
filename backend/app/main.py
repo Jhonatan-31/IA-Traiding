@@ -679,6 +679,40 @@ def health():
         raise HTTPException(status_code=503, detail=payload) from exc
 
 
+@app.get("/api/public/health")
+def public_health():
+    """
+    AF5/AF6: endpoint mínimo de observación — sin balances, posiciones, estrategias ni secretos.
+    Apto para probe externo futuro (NOT_CONFIGURED hasta autorización).
+    """
+    out = {
+        "ok": False,
+        "service": "ia-bot-trading",
+        "mode": "PAPER_ONLY",
+        "checked_at": datetime.now(timezone.utc).isoformat(),
+        "db": "unknown",
+        "deploy_commit": None,
+    }
+    try:
+        with db() as c:
+            c.execute("SELECT 1")
+            out["db"] = "ok"
+            try:
+                from .ops.health_center import ensure_continuity_schema
+
+                ensure_continuity_schema(c.execute)
+                row = c.execute("SELECT git_commit FROM deploy_meta WHERE id=1").fetchone()
+                out["deploy_commit"] = (row or {}).get("git_commit")
+            except Exception:
+                pass
+        out["ok"] = True
+        return out
+    except Exception as exc:
+        out["db"] = "error"
+        out["error_type"] = type(exc).__name__
+        raise HTTPException(status_code=503, detail=out) from exc
+
+
 @app.get("/api/system")
 async def system():
     t_api = time.perf_counter()
@@ -913,6 +947,31 @@ async def system():
         deploy_meta=serial(deploy_meta) if deploy_meta else None,
         recent_gaps=serial(recent_gaps),
     )
+
+    reliability = None
+    try:
+        from .ops.reliability import maybe_record_sample, reliability_dashboard
+
+        demo_fn = (
+            (continuity_center.get("services") or {}).get("demo_runner") or {}
+        ).get("functional_status") or "UNKNOWN"
+        active_fn = (
+            (continuity_center.get("services") or {}).get("active_runner") or {}
+        ).get("functional_status") or "UNKNOWN"
+        with db() as c3:
+            maybe_record_sample(
+                c3.execute,
+                api_ok=True,
+                db_ok=True,
+                demo_functional=str(demo_fn),
+                active_functional=str(active_fn),
+                market_stale=bool((continuity or {}).get("stale_prices")),
+                detail={"source": "api_system"},
+            )
+            reliability = reliability_dashboard(c3.execute)
+    except Exception:
+        reliability = {"error": "reliability_unavailable", "external_monitor": {"status": "NOT_CONFIGURED"}}
+
     critical = list(continuity_center.get("critical_alerts") or [])
     for a in (
         {
@@ -942,6 +1001,7 @@ async def system():
             "components": components,
             "continuity": continuity,
             "continuity_center": continuity_center,
+            "reliability": reliability,
             "auto_recovery_policy": safe_auto_recoveries(),
             "critical_alerts": critical,
             "engine": engine,
@@ -987,7 +1047,18 @@ async def continuity_center_api():
             k: system_payload.get("components", {}).get(k)
             for k in ("demo_runner", "active_runner", "shadow_scheduler", "worker", "postgres", "binance")
         },
+        "reliability": system_payload.get("reliability"),
     }
+
+
+@app.get("/api/reliability")
+async def reliability_api():
+    """SLI longitudinal — ventanas 24h/7d/30d con cobertura real (sin inventar historial)."""
+    from .ops.reliability import reliability_dashboard
+
+    with db() as c:
+        dash = reliability_dashboard(c.execute)
+    return {"mode": "PAPER_ONLY", "reliability": serial(dash)}
 
 
 @app.get("/api/diagnostics/binance")

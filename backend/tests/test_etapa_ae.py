@@ -16,7 +16,7 @@ def test_ae_protection_idle_without_positions():
         price_stale=False,
     )
     assert p["entries"] == "ENTRIES_DISABLED"
-    assert p["protection"] == "PROTECTION_IDLE"
+    assert p["protection"] == "SIN_POSICIONES_QUE_PROTEGER"
     assert p["claims_continuous_coverage"] is False
 
 

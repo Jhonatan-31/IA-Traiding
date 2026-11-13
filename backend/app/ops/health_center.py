@@ -39,8 +39,8 @@ def protection_status(
 
     if open_positions <= 0:
         # No open risk — supervisor health still reported separately.
-        prot = "PROTECTION_IDLE"
-        note = "sin_posiciones_abiertas_no_implica_supervisor_sano"
+        prot = "SIN_POSICIONES_QUE_PROTEGER"
+        note = "ausencia_de_posiciones_no_prueba_stop_loss_ni_supervisor_sano"
     elif gap.get("status") == "OK" and not price_stale:
         prot = "PROTECTION_AVAILABLE"
         note = "heartbeat_fresco_y_precios_ok"

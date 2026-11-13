@@ -217,6 +217,46 @@ export default function HealthPage() {
               ) : (
                 <p className="muted">Sin alertas críticas de runners en este check.</p>
               )}
+              {(() => {
+                const rel = (
+                  system as { reliability?: Record<string, unknown> } | null
+                )?.reliability;
+                if (!rel) return null;
+                const w = (rel.windows || {}) as Record<string, Record<string, unknown>>;
+                const w24 = w["24h"] || {};
+                const w7 = w["7d"] || {};
+                const w30 = w["30d"] || {};
+                const ext = (rel.external_monitor || {}) as Record<string, unknown>;
+                return (
+                  <div style={{ marginTop: 12 }}>
+                    <h4 style={{ margin: "0 0 8px" }}>Confiabilidad 24/7 (evidencia real)</h4>
+                    <p className="muted" style={{ fontSize: 12 }}>
+                      Inicio mediciones: {fmtTime(rel.measurements_started_at as string)}. UNKNOWN
+                      y muestras faltantes no cuentan como disponible. No se inventa historial.
+                    </p>
+                    <p>
+                      24h: {String(w24.evidence_status || "—")} · cobertura=
+                      {String(w24.coverage ?? "—")} · operacional=
+                      {String(w24.strict_operational_ratio ?? "—")} · muestras=
+                      {String(w24.valid_samples ?? "—")}/{String(w24.expected_samples ?? "—")}
+                    </p>
+                    <p>
+                      7d: {String(w7.evidence_status || "—")} · cobertura=
+                      {String(w7.coverage ?? "—")} · operacional=
+                      {String(w7.strict_operational_ratio ?? "—")}
+                    </p>
+                    <p>
+                      30d: {String(w30.evidence_status || "—")} · cobertura=
+                      {String(w30.coverage ?? "—")} · operacional=
+                      {String(w30.strict_operational_ratio ?? "—")}
+                    </p>
+                    <p>
+                      Monitor externo:{" "}
+                      <span className="pill info">{String(ext.status || "NOT_CONFIGURED")}</span>
+                    </p>
+                  </div>
+                );
+              })()}
             </>
           );
         })()}
