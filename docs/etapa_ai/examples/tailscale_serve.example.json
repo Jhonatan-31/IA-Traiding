@@ -1,0 +1,11 @@
+{
+  "TCP": { "443": { "HTTPS": true } },
+  "Web": {
+    "${TS_CERT_DOMAIN}:443": {
+      "Handlers": {
+        "/": { "Proxy": "http://127.0.0.1:8090" }
+      }
+    }
+  },
+  "_comment": "EJEMPLO — no aplicar sin autorización. Sustituye TS_CERT_DOMAIN. Sin Funnel. Sin WAN. Cookies Secure requieren HTTPS."
+}

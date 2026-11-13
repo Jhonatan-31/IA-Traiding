@@ -28,6 +28,23 @@ HEADER_NAME = "X-Dashboard-Read-Token"
 # In-memory denial counters (process-local; no secrets).
 _denials = 0
 _last_denial_at: float | None = None
+# Simple login rate limit: ip -> list of attempt timestamps
+_login_attempts: dict[str, list[float]] = {}
+LOGIN_WINDOW_S = int(os.environ.get("DASHBOARD_LOGIN_WINDOW_S", "300"))
+LOGIN_MAX_ATTEMPTS = int(os.environ.get("DASHBOARD_LOGIN_MAX_ATTEMPTS", "20"))
+
+
+def check_login_rate_limit(client_key: str) -> bool:
+    """Return True if allowed; False if rate-limited. Never stores secrets."""
+    now = time.time()
+    key = (client_key or "unknown")[:128]
+    bucket = [t for t in _login_attempts.get(key, []) if now - t < LOGIN_WINDOW_S]
+    if len(bucket) >= LOGIN_MAX_ATTEMPTS:
+        _login_attempts[key] = bucket
+        return False
+    bucket.append(now)
+    _login_attempts[key] = bucket
+    return True
 
 
 def read_auth_enabled() -> bool:

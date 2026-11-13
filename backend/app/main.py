@@ -782,9 +782,13 @@ async def auth_login(request: Request):
             "status": "PREPARADO_SIN_ACTIVAR",
             "message": "Auth de lectura no está activa; no se requiere acceso.",
         }
-    if not token_matches(token):
-        from .ops.access_guard import record_denial
+    from .ops.access_guard import check_login_rate_limit, record_denial
 
+    client_key = request.client.host if request.client else "unknown"
+    if not check_login_rate_limit(client_key):
+        record_denial("/api/auth/login", "rate_limited")
+        raise HTTPException(status_code=429, detail="too_many_login_attempts")
+    if not token_matches(token):
         record_denial("/api/auth/login", "login_invalid")
         raise HTTPException(status_code=401, detail="unauthorized_dashboard_read")
     secure = request.url.scheme == "https" or (
