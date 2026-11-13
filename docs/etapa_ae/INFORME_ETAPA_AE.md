@@ -2,8 +2,10 @@
 
 **Fecha:** 2026-11-13  
 **HEAD base:** `78be72d`  
+**Commit AE:** `a079f8a` · tag `checkpoint-etapa-ae`  
 **Checkpoint previo:** `checkpoint-etapa-ae-pre-20261113_113815`  
 **Backup local:** `backups/paper_pre_etapa_ae_20261113_113815.dump`  
+**Deploy EBZ:** verificado postflight (api/ms healthy, dashboard 200, A/B STOPPED, Consultate/EVS intactos)  
 **AD no reescrito.**
 
 ---
