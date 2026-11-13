@@ -10,7 +10,7 @@ from decimal import Decimal
 
 import httpx
 import psycopg
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
 from psycopg.rows import dict_row
 
 from . import alerts as alerts_mod
@@ -558,24 +558,28 @@ app.include_router(research_router)
 
 @app.middleware("http")
 async def dashboard_read_auth_middleware(request, call_next):
-    """AG2: enforce read auth only when DASHBOARD_READ_AUTH is enabled."""
-    from .ops.access_guard import path_requires_read_auth, read_auth_enabled
+    """AH: enforce read auth only when DASHBOARD_READ_AUTH is enabled (header or cookie)."""
+    from .ops.access_guard import (
+        extract_read_credential,
+        path_requires_read_auth,
+        read_auth_enabled,
+        record_denial,
+        token_matches,
+    )
 
     path = request.url.path
     if read_auth_enabled() and path_requires_read_auth(path):
-        # Mutations still use LAB_CONTROL_TOKEN via Depends; this gates reads too.
+        from fastapi.responses import JSONResponse
+
         expected = str(os.environ.get("DASHBOARD_READ_TOKEN", "")).strip()
         if not expected:
-            from fastapi.responses import JSONResponse
-
             return JSONResponse(
                 status_code=503,
                 content={"detail": "dashboard_read_token_not_configured"},
             )
-        got = request.headers.get("X-Dashboard-Read-Token")
-        if not got or got != expected:
-            from fastapi.responses import JSONResponse
-
+        got = extract_read_credential(request)
+        if not token_matches(got):
+            record_denial(path, "unauthorized")
             return JSONResponse(
                 status_code=401,
                 content={"detail": "unauthorized_dashboard_read"},
@@ -726,6 +730,86 @@ def health():
         payload["db"] = "error"
         payload["error"] = type(exc).__name__
         raise HTTPException(status_code=503, detail=payload) from exc
+
+
+@app.get("/api/auth/status")
+def auth_status(request: Request):
+    """AH: estado de auth de lectura — sin secretos. Público (necesario para UI)."""
+    from .ops.access_guard import (
+        extract_read_credential,
+        read_auth_enabled,
+        read_auth_status,
+        token_matches,
+        websocket_policy,
+    )
+
+    st = read_auth_status()
+    authed = False
+    if read_auth_enabled():
+        authed = token_matches(extract_read_credential(request))
+    return {
+        "mode": "PAPER_ONLY",
+        "read_auth": st,
+        "session_valid": authed if st.get("enforced") else True,
+        "websocket_policy": websocket_policy(),
+        "roles": {
+            "visitor": "solo estáticos + /api/public/* + /api/health + /api/auth/*",
+            "reader": "consulta dashboard; sin mutaciones de bots",
+            "control": "mutaciones con X-Lab-Token (separado)",
+        },
+    }
+
+
+@app.post("/api/auth/login")
+async def auth_login(request: Request):
+    """AH: establece cookie HttpOnly de lectura. No-op útil cuando auth OFF."""
+    from .ops.access_guard import (
+        read_auth_enabled,
+        set_session_cookie,
+        token_matches,
+    )
+    from fastapi.responses import JSONResponse
+
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    token = str((body or {}).get("token") or "").strip()
+    if not read_auth_enabled():
+        return {
+            "ok": True,
+            "enforced": False,
+            "status": "PREPARADO_SIN_ACTIVAR",
+            "message": "Auth de lectura no está activa; no se requiere acceso.",
+        }
+    if not token_matches(token):
+        from .ops.access_guard import record_denial
+
+        record_denial("/api/auth/login", "login_invalid")
+        raise HTTPException(status_code=401, detail="unauthorized_dashboard_read")
+    secure = request.url.scheme == "https" or (
+        str(request.headers.get("x-forwarded-proto", "")).lower() == "https"
+    )
+    resp = JSONResponse(
+        content={
+            "ok": True,
+            "enforced": True,
+            "secure_cookie": secure,
+            "message": "Sesión de lectura iniciada.",
+        }
+    )
+    set_session_cookie(resp, token, secure=secure)
+    return resp
+
+
+@app.post("/api/auth/logout")
+def auth_logout():
+    from .ops.access_guard import clear_session_cookie
+    from fastapi.responses import JSONResponse
+
+    resp = JSONResponse(content={"ok": True, "message": "Sesión cerrada."})
+    clear_session_cookie(resp)
+    return resp
 
 
 @app.get("/api/public/health")

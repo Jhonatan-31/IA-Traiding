@@ -295,11 +295,47 @@ export type AlertRow = {
 };
 
 async function getJson<T>(path: string): Promise<T> {
-  const res = await fetch(path);
+  const res = await fetch(path, { credentials: "include" });
   if (!res.ok) {
     throw new Error(`${path} → HTTP ${res.status}`);
   }
   return res.json() as Promise<T>;
+}
+
+export type AuthStatus = {
+  mode: string;
+  session_valid: boolean;
+  read_auth: {
+    status: string;
+    enforced: boolean;
+    token_configured?: boolean;
+    header?: string;
+    cookie?: string;
+    note?: string;
+  };
+  websocket_policy?: Record<string, unknown>;
+  roles?: Record<string, string>;
+};
+
+export async function fetchAuthStatus(): Promise<AuthStatus> {
+  return getJson<AuthStatus>("/api/auth/status");
+}
+
+export async function loginReadAccess(token: string): Promise<{ ok: boolean; message?: string }> {
+  const res = await fetch("/api/auth/login", {
+    method: "POST",
+    credentials: "include",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ token }),
+  });
+  if (!res.ok) {
+    throw new Error("Acceso denegado. Verifica la clave e inténtalo de nuevo.");
+  }
+  return res.json();
+}
+
+export async function logoutReadAccess(): Promise<void> {
+  await fetch("/api/auth/logout", { method: "POST", credentials: "include" });
 }
 
 export const api = {
