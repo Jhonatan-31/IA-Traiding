@@ -556,6 +556,33 @@ app.include_router(active_router)
 app.include_router(research_router)
 
 
+@app.middleware("http")
+async def dashboard_read_auth_middleware(request, call_next):
+    """AG2: enforce read auth only when DASHBOARD_READ_AUTH is enabled."""
+    from .ops.access_guard import path_requires_read_auth, read_auth_enabled
+
+    path = request.url.path
+    if read_auth_enabled() and path_requires_read_auth(path):
+        # Mutations still use LAB_CONTROL_TOKEN via Depends; this gates reads too.
+        expected = str(os.environ.get("DASHBOARD_READ_TOKEN", "")).strip()
+        if not expected:
+            from fastapi.responses import JSONResponse
+
+            return JSONResponse(
+                status_code=503,
+                content={"detail": "dashboard_read_token_not_configured"},
+            )
+        got = request.headers.get("X-Dashboard-Read-Token")
+        if not got or got != expected:
+            from fastapi.responses import JSONResponse
+
+            return JSONResponse(
+                status_code=401,
+                content={"detail": "unauthorized_dashboard_read"},
+            )
+    return await call_next(request)
+
+
 def serial(rows):
     def normalize(x):
         if isinstance(x, Decimal):
@@ -994,6 +1021,15 @@ async def system():
     except Exception:
         reliability = {"error": "reliability_unavailable", "external_monitor": {"status": "NOT_CONFIGURED"}}
 
+    security_recovery = None
+    try:
+        from .ops.security_recovery import security_recovery_dashboard
+
+        with db() as c4:
+            security_recovery = security_recovery_dashboard(c4.execute)
+    except Exception:
+        security_recovery = {"error": "security_recovery_unavailable"}
+
     critical = list(continuity_center.get("critical_alerts") or [])
     for a in (
         {
@@ -1024,6 +1060,7 @@ async def system():
             "continuity": continuity,
             "continuity_center": continuity_center,
             "reliability": reliability,
+            "security_recovery": security_recovery,
             "auto_recovery_policy": safe_auto_recoveries(),
             "critical_alerts": critical,
             "engine": engine,
@@ -1081,6 +1118,16 @@ async def reliability_api():
     with db() as c:
         dash = reliability_dashboard(c.execute)
     return {"mode": "PAPER_ONLY", "reliability": serial(dash)}
+
+
+@app.get("/api/security/recovery")
+async def security_recovery_api():
+    """AG9: seguridad y recuperación — sin secretos."""
+    from .ops.security_recovery import security_recovery_dashboard
+
+    with db() as c:
+        dash = security_recovery_dashboard(c.execute)
+    return {"mode": "PAPER_ONLY", "security_recovery": serial(dash)}
 
 
 @app.get("/api/diagnostics/binance")

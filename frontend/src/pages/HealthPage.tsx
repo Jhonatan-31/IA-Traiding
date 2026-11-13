@@ -257,6 +257,64 @@ export default function HealthPage() {
                   </div>
                 );
               })()}
+              {(() => {
+                const sec = (
+                  system as { security_recovery?: Record<string, unknown> } | null
+                )?.security_recovery;
+                if (!sec || (sec as { error?: string }).error) return null;
+                const read = (sec.dashboard_read_access || {}) as Record<string, unknown>;
+                const bak = (sec.backup_ebz || {}) as Record<string, unknown>;
+                const last = (bak.last || {}) as Record<string, unknown>;
+                const off = (sec.backup_offhost || {}) as Record<string, unknown>;
+                const disk2 = (sec.backup_second_disk || {}) as Record<string, unknown>;
+                const mon = (sec.external_monitor || {}) as Record<string, unknown>;
+                const dr = (sec.disaster_recovery || {}) as Record<string, unknown>;
+                return (
+                  <div style={{ marginTop: 14 }}>
+                    <h4 style={{ margin: "0 0 8px" }}>Seguridad y recuperación</h4>
+                    <p>
+                      Acceso lectura dashboard:{" "}
+                      <span className="pill info">{String(read.status || "PENDIENTE")}</span>
+                    </p>
+                    <p>
+                      Último backup EBZ:{" "}
+                      <span className="pill info">{String(bak.status || "PENDIENTE")}</span>
+                      {last.created_at ? (
+                        <>
+                          {" "}
+                          · {fmtTime(last.created_at as string)} · {String(last.bytes ?? "—")} bytes
+                          {last.sha256 ? ` · sha256 ${String(last.sha256).slice(0, 12)}…` : ""}
+                        </>
+                      ) : (
+                        <span className="muted"> · sin registro en base aún</span>
+                      )}
+                    </p>
+                    <p>
+                      Cron backups: {String(bak.cron || "—")} · {String(bak.schedule_note || "")}
+                    </p>
+                    <p>
+                      Segundo disco:{" "}
+                      <span className="pill info">{String(disk2.status || "PENDIENTE")}</span>
+                      <span className="muted"> · {String(disk2.note || "")}</span>
+                    </p>
+                    <p>
+                      Copia off-host:{" "}
+                      <span className="pill warn">{String(off.status || "PENDIENTE")}</span>
+                    </p>
+                    <p>
+                      Monitor externo:{" "}
+                      <span className="pill info">{String(mon.status || "NOT_CONFIGURED")}</span>
+                    </p>
+                    <p>
+                      DR: {String(dr.status || "—")} · RPO propuesto {String(dr.rpo_proposed_hours ?? "—")}h ·
+                      RTO propuesto {String(dr.rto_proposed_hours ?? "—")}h
+                    </p>
+                    <p className="muted" style={{ fontSize: 12 }}>
+                      {String(sec.risk_total_server_loss || "")}
+                    </p>
+                  </div>
+                );
+              })()}
             </>
           );
         })()}
