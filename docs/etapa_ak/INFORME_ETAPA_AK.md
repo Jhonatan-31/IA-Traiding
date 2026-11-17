@@ -35,7 +35,8 @@ V2 permite contrastar contra **BBO real** cuando hay bookTicker fresco, pero **n
 1. Grabación prospectiva BBO/depth (no inventar pasado).  
 2. Cable Ethernet estable en EBZ (NO-CARRIER previo).  
 3. Re-ingesta Vision ext opt-in.  
-4. Decisión explícita de migrar paper engines a V2 (autorización aparte).
+4. Decisión explícita de migrar paper engines a V2 (autorización aparte).  
+5. Alinear cash lab (posible doble fee en SELL) y pasar `order_qty`/`latency` reales si se unifica bajo V2.
 
 ## Entrega git
 

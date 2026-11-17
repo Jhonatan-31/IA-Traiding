@@ -27,6 +27,10 @@
 
 - Research usa `spread/20000` en `COST_FRAC`; `estimate_fill_price` usa `spread/10000` como half-spread (equivalente a 2× half en buy+sell round-trip si se interpreta distinto).  
 - Fee en precio all-in vs fee reportada por separado: correcto tras AD en engines paper; research atribuye por shares del COST_FRAC.
+- **Lab ventas:** `lab/ledger.apply_sell` puede restar fee otra vez sobre un `fill_price` ya neto (V1 SELL) → riesgo de doble fee en cash lab (no corregido en AK; fuera de demo/active).  
+- **Impacto por tamaño inactivo** en demo/active/express/lab: no pasan `order_qty` a `estimate_fill_price` → `vol_factor`/partial por barra casi nunca aplica.  
+- `latency_bars` está en assumptions pero **no se cablea** en el ciclo paper (fill al mark actual).  
+- Coexisten ≥6 modelos (SMA legacy, V1 paper, lab, research Z/AB, backtest B, prospect shadow) con spreads/slips distintos (p.ej. paper default spread 2 bps vs research 1 bp).
 
 ## Qué mejora AK (V2) sin reemplazar V1
 
