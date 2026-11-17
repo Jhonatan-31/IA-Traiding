@@ -61,7 +61,17 @@ def simulate_fill_v2(
         if a.reject_crossed_or_invalid and (bbo.ask_price < bbo.bid_price or bbo.bid_price <= 0):
             return {"ok": False, "reason": "invalid_bbo", "engine": "v2", "data_quality": "INVALID"}
         top_qty = bbo.ask_qty if side_u == "BUY" else bbo.bid_qty
-        if a.respect_top_qty and top_qty > 0 and qty > top_qty:
+        if a.respect_top_qty and top_qty <= 0:
+            return {
+                "ok": False,
+                "reason": "insufficient_top_of_book_qty",
+                "engine": "v2",
+                "data_quality": "INSUFFICIENT_DEPTH",
+                "qty_requested": qty,
+                "top_qty": float(top_qty),
+                "note": "Top-of-book qty ausente o cero; no se fabrica profundidad.",
+            }
+        if a.respect_top_qty and qty > top_qty:
             fill_qty = float(top_qty)
             partial = True
             uncertainty.append("size_exceeds_top_of_book_qty")

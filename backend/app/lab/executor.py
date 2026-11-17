@@ -277,6 +277,14 @@ async def process_orders(db_factory) -> dict[str, Any]:
                             continue
                         uid = str(order["order_uid"])
                         # Execution price from fill model ≠ stop trigger price
+                        # fill["price"] is all-in (net of fee). Pass fee_component for reporting only.
+                        pos_row = c.execute(
+                            "SELECT qty FROM lab_positions WHERE account_id=%s AND symbol=%s",
+                            (ACCOUNT_ID, symbol),
+                        ).fetchone()
+                        qty_now = _d(pos_row["qty"]) if pos_row else _d(0)
+                        fee_rep = _d(fill.get("fee_component") or 0) * qty_now
+                        slip_rep = _d(fill.get("slip_component") or 0) * qty_now
                         result = apply_sell(
                             c.execute,
                             order_uid=uid,
@@ -289,6 +297,9 @@ async def process_orders(db_factory) -> dict[str, Any]:
                             stop_trigger_price=_d(meta["stop_trigger_price"])
                             if meta.get("stop_trigger_price") is not None
                             else None,
+                            fee=fee_rep,
+                            slip=slip_rep,
+                            fill_price_is_all_in=True,
                         )
                         if result["status"] != "FILLED":
                             mark_order(

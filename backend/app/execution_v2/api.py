@@ -4,11 +4,14 @@ from __future__ import annotations
 from fastapi import APIRouter, Query
 from pydantic import BaseModel, Field
 
+from .bbo_capture import CapturePlan, estimate_disk_usage, run_bounded_capture
 from .bbo_feed import refresh_book_ticker
 from .bbo_store import get_registry
+from .compare_experiment import HypotheticalDecision, evaluate_pair, summarize_pairs
 from .cost_reconcile import reconcile_d28h5_costs_from_artifact
 from .engine_v2 import ExecutionV2Assumptions, compare_v1_v2, simulate_fill_v2
 from . import ENGINE_VERSION, V1_ENGINE
+import time
 
 router = APIRouter(prefix="/api/execution-quality", tags=["execution-quality"])
 
@@ -127,5 +130,72 @@ async def audit_summary():
             "historical_bbo": "not fabricated",
         },
         "d28h5_costs": costs,
-        "verdict_hint": "SIMULACIÓN MEJORADA CON LIMITACIONES",
+        "lab_accounting": {
+            "sell_cash_model": "all_in_price_no_double_fee",
+            "historical_lab_sells": "NOT_REWRITTEN",
+            "note": "AL1 fixed forward Lab SELL double fee; historical rows preserved",
+        },
+        "verdict_hint": "V2 MEJORADO CON LIMITACIONES",
     }
+
+
+class CompareBody(BaseModel):
+    side: str = "BUY"
+    qty: float = Field(..., gt=0)
+    symbol: str = "BTCUSDT"
+    ref_mid: float | None = None
+    assumed_send_latency_ms: int = 0
+
+
+@router.post("/compare-once")
+async def compare_once(body: CompareBody):
+    """Una observación V1 vs V2. Sin BBO fresco → NO_COMPARABLE."""
+    await refresh_book_ticker([body.symbol.upper()])
+    reg = get_registry()
+    bbo = reg.get(body.symbol)
+    ref = body.ref_mid if body.ref_mid is not None else (bbo.mid if bbo else None)
+    if ref is None:
+        return {
+            "comparable": False,
+            "status": "NO_COMPARABLE",
+            "reason": "missing_ref_and_bbo",
+            "fabricated": False,
+        }
+    now = int(time.time() * 1000)
+    row = evaluate_pair(
+        HypotheticalDecision(
+            decision_ts_ms=now,
+            symbol=body.symbol.upper(),
+            side=body.side,
+            qty=body.qty,
+            ref_mid=float(ref),
+            assumed_send_latency_ms=body.assumed_send_latency_ms,
+        ),
+        bbo,
+        now_ms=now,
+    )
+    return {"observation": row, "summary": summarize_pairs([row])}
+
+
+@router.get("/capture/plan")
+async def capture_plan():
+    plan = CapturePlan()
+    return {
+        "plan": {
+            "symbols": list(plan.symbols),
+            "poll_interval_s": plan.poll_interval_s,
+            "max_seconds": plan.max_seconds,
+            "max_events": plan.max_events,
+            "max_bytes": plan.max_bytes,
+        },
+        "disk": estimate_disk_usage(plan),
+        "permanent_24_7": False,
+        "requires_authorization_for_permanent": True,
+    }
+
+
+@router.post("/capture/run-bounded")
+async def capture_run_bounded(seconds: float = Query(default=5.0, ge=1.0, le=30.0)):
+    """Captura manual corta. No activa grabación permanente."""
+    plan = CapturePlan(max_seconds=float(seconds), max_events=max(3, int(seconds) * 3))
+    return await run_bounded_capture(plan, out_dir=None)

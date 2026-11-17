@@ -123,7 +123,16 @@ def apply_sell(
     reason: str,
     stop_triggered: bool = False,
     stop_trigger_price: Decimal | None = None,
+    fee: Decimal | None = None,
+    slip: Decimal | None = None,
+    fill_price_is_all_in: bool = True,
 ) -> dict[str, Any]:
+    """SELL cash model (AL1):
+
+    When ``fill_price`` comes from ``estimate_fill_price`` (SELL), it is already
+    **net of fee** (all-in). Credit ``qty * fill_price`` to cash and record fee
+    only for reporting — do **not** subtract fee again (demo/active pattern).
+    """
     pos = execute(
         "SELECT * FROM lab_positions WHERE account_id=%s AND symbol=%s",
         (ACCOUNT_ID, symbol),
@@ -135,8 +144,16 @@ def apply_sell(
     qty = _d(pos["qty"])
     cost = _d(pos["cost"])
     proceeds = qty * fill_price
-    fee_amt = proceeds * FEE_RATE
-    net = proceeds - fee_amt
+    if fee is not None:
+        fee_amt = _d(fee)
+    elif fill_price_is_all_in and FEE_RATE < 1:
+        # Reconstruct reporting fee from all-in net price: fee ≈ net * f/(1-f)
+        fee_amt = proceeds * _d(FEE_RATE) / (Decimal("1") - _d(FEE_RATE))
+    else:
+        fee_amt = proceeds * _d(FEE_RATE)
+    # AL1 fix: all-in fill_price → credit proceeds without second fee debit.
+    net = proceeds if fill_price_is_all_in else (proceeds - fee_amt)
+    slip_amt = slip if slip is not None else proceeds * _d(SLIP_RATE)
     realized = net - cost
     acc = execute("SELECT cash FROM lab_accounts WHERE id=%s", (ACCOUNT_ID,)).fetchone()
     new_cash = _d(acc["cash"]) + net
@@ -157,7 +174,7 @@ def apply_sell(
             qty,
             fill_price,
             fee_amt,
-            proceeds * SLIP_RATE,
+            slip_amt,
             candle_ms,
             strategy,
             reason,
@@ -173,6 +190,7 @@ def apply_sell(
         "stop_triggered": stop_triggered,
         "stop_trigger_price": float(stop_trigger_price) if stop_trigger_price is not None else None,
         "execution_price": float(fill_price),
+        "cash_model": "all_in_price_no_double_fee" if fill_price_is_all_in else "separate_fee_debit",
     }
 
 

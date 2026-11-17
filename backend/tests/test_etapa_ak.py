@@ -76,11 +76,12 @@ def test_ak_no_double_fee_in_v2_cash_delta():
 
 
 def test_ak_insufficient_implicit_via_zero_top_qty_uncertainty():
-    # top qty 0 → respect_top_qty no cap (unknown depth) but uncertainty path via compare
+    # AL5: top qty 0 → no fabricar fill; rechazar por profundidad insuficiente.
     bbo = _bbo(ask_q=0.0, bid_q=0.0)
     out = simulate_fill_v2(side="BUY", qty=1.0, bbo=bbo)
-    assert out["ok"]
-    assert out["partial"] is False  # cannot cap without positive top qty
+    assert out["ok"] is False
+    assert out["reason"] == "insufficient_top_of_book_qty"
+    assert out["data_quality"] == "INSUFFICIENT_DEPTH"
 
 
 def test_ak_compare_v1_v2_deterministic():

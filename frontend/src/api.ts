@@ -650,6 +650,32 @@ export const api = {
     getJson<Record<string, unknown>>("/api/execution-quality/d28h5-costs"),
   executionQualityAudit: () =>
     getJson<Record<string, unknown>>("/api/execution-quality/audit-summary"),
+  executionQualityCompareOnce: async (body: {
+    side: string;
+    qty: number;
+    symbol?: string;
+    ref_mid?: number | null;
+    assumed_send_latency_ms?: number;
+  }) => {
+    const res = await fetch("/api/execution-quality/compare-once", {
+      method: "POST",
+      credentials: "include",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) throw new Error(`compare-once → HTTP ${res.status}`);
+    return res.json() as Promise<Record<string, unknown>>;
+  },
+  executionQualityCapturePlan: () =>
+    getJson<Record<string, unknown>>("/api/execution-quality/capture/plan"),
+  executionQualityCaptureBounded: async (seconds = 5) => {
+    const res = await fetch(
+      `/api/execution-quality/capture/run-bounded?seconds=${encodeURIComponent(String(seconds))}`,
+      { method: "POST", credentials: "include" }
+    );
+    if (!res.ok) throw new Error(`capture-bounded → HTTP ${res.status}`);
+    return res.json() as Promise<Record<string, unknown>>;
+  },
 };
 
 export function fmtNum(n: number | null | undefined, digits = 4): string {
