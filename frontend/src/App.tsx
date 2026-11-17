@@ -18,6 +18,7 @@ const DemoAutoPage = lazy(() => import("./pages/DemoAutoPage"));
 const PositionsPage = lazy(() => import("./pages/PositionsPage"));
 const ConfigPage = lazy(() => import("./pages/ConfigPage"));
 const ResearchCenterPage = lazy(() => import("./pages/ResearchCenterPage"));
+const ExecutionQualityPage = lazy(() => import("./pages/ExecutionQualityPage"));
 
 function PageLoader() {
   return (
@@ -44,6 +45,7 @@ export default function App() {
           <Route path="/demo" element={<DemoAutoPage />} />
           <Route path="/estrategias" element={<StrategiesPage />} />
           <Route path="/investigacion" element={<ResearchCenterPage />} />
+          <Route path="/calidad-ejecucion" element={<ExecutionQualityPage />} />
 
           {/* Compatibilidad con rutas anteriores */}
           <Route path="/charts" element={<Navigate to="/mercado" replace />} />

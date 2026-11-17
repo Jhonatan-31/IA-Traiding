@@ -619,6 +619,37 @@ export const api = {
     if (!res.ok) throw new Error(`lab cycle → HTTP ${res.status}`);
     return res.json() as Promise<Record<string, unknown>>;
   },
+  executionQualityStatus: () =>
+    getJson<Record<string, unknown>>("/api/execution-quality/status"),
+  executionQualityBbo: () => getJson<Record<string, unknown>>("/api/execution-quality/bbo"),
+  executionQualityRefreshBbo: async (symbols = "BTCUSDT,ETHUSDT") => {
+    const res = await fetch(
+      `/api/execution-quality/bbo/refresh?symbols=${encodeURIComponent(symbols)}`,
+      { method: "POST", credentials: "include" }
+    );
+    if (!res.ok) throw new Error(`bbo refresh → HTTP ${res.status}`);
+    return res.json() as Promise<Record<string, unknown>>;
+  },
+  executionQualitySimulate: async (body: {
+    side: string;
+    qty: number;
+    symbol?: string;
+    ref_mid?: number | null;
+    allow_mid_fallback?: boolean;
+  }) => {
+    const res = await fetch("/api/execution-quality/simulate", {
+      method: "POST",
+      credentials: "include",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) throw new Error(`simulate → HTTP ${res.status}`);
+    return res.json() as Promise<Record<string, unknown>>;
+  },
+  executionQualityD28Costs: () =>
+    getJson<Record<string, unknown>>("/api/execution-quality/d28h5-costs"),
+  executionQualityAudit: () =>
+    getJson<Record<string, unknown>>("/api/execution-quality/audit-summary"),
 };
 
 export function fmtNum(n: number | null | undefined, digits = 4): string {

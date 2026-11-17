@@ -554,6 +554,9 @@ app.include_router(express_router)
 app.include_router(demo_router)
 app.include_router(active_router)
 app.include_router(research_router)
+from .execution_v2.api import router as execution_quality_router
+
+app.include_router(execution_quality_router)
 
 
 @app.middleware("http")
