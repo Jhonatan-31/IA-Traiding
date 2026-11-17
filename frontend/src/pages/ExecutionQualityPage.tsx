@@ -11,22 +11,31 @@ export default function ExecutionQualityPage() {
   const [compare, setCompare] = useState<Dict | null>(null);
   const [capturePlan, setCapturePlan] = useState<Dict | null>(null);
   const [captureRun, setCaptureRun] = useState<Dict | null>(null);
+  const [anomaly, setAnomaly] = useState<Dict | null>(null);
+  const [experiment, setExperiment] = useState<Dict | null>(null);
+  const [labAudit, setLabAudit] = useState<Dict | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   async function load() {
     setError(null);
     try {
-      const [s, c, a, plan] = await Promise.all([
+      const [s, c, a, plan, anom, exp, lab] = await Promise.all([
         api.executionQualityStatus(),
         api.executionQualityD28Costs(),
         api.executionQualityAudit(),
         api.executionQualityCapturePlan(),
+        api.executionQualityAlAnomaly(),
+        api.executionQualityExperimentLatest(),
+        api.executionQualityLabSellsAudit(),
       ]);
       setStatus(s);
       setCosts(c);
       setAudit(a);
       setCapturePlan(plan);
+      setAnomaly(anom);
+      setExperiment(exp);
+      setLabAudit(lab);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Error");
     }
@@ -96,6 +105,10 @@ export default function ExecutionQualityPage() {
   const summary = (compare?.summary as Dict | undefined) || {};
   const lab = (audit?.lab_accounting as Dict | undefined) || {};
   const disk = (capturePlan?.disk as Dict | undefined) || {};
+  const expBody = (experiment?.experiment as Dict | undefined) || {};
+  const expSummary = (expBody.analysis_summary as Dict | undefined) || {};
+  const expManifest = (expBody.manifest as Dict | undefined) || {};
+  const decomp = (anomaly?.decomposition as Dict | undefined) || {};
 
   return (
     <div>
@@ -252,11 +265,67 @@ export default function ExecutionQualityPage() {
       </section>
 
       <section className="panel">
-        <h3>Captura experimental (acotada)</h3>
+        <h3>AM1 — ¿Por qué V2 pareció más barato en AL?</h3>
+        {!anomaly ? (
+          <p className="muted">Sin reconstrucción.</p>
+        ) : (
+          <>
+            <p className="muted">{String(anomaly.original_verdict)}</p>
+            <p>
+              Diff unitario V2−V1: {fmtNum(anomaly.diff_unit_v2_minus_v1 as number, 4)} ·
+              cash 0.001 BTC: {fmtNum(anomaly.diff_cash_v2_minus_v1 as number, 6)}
+            </p>
+            <p className="muted">{String(decomp.primary_cause || "")}</p>
+          </>
+        )}
+      </section>
+
+      <section className="panel">
+        <h3>Experimento de precios ejecutables</h3>
         <p className="muted">
-          Plan: {String((capturePlan?.plan as Dict | undefined)?.max_seconds ?? "—")}s ·
+          DATOS OBSERVADOS · DECISIONES HIPOTÉTICAS · FILL ESTIMADO · no es OPERACIÓN PAPER.
+          Captura permanente: no disponible en UI.
+        </p>
+        {experiment?.ok ? (
+          <>
+            <p>
+              Inicio ms: {String(expManifest.started_at_ms ?? expBody.started_at_ms)} · fin:{" "}
+              {String(expManifest.ended_at_ms ?? expBody.ended_at_ms)} · duración ms:{" "}
+              {String(expManifest.duration_ms ?? "—")}
+            </p>
+            <p>
+              Símbolos: {JSON.stringify(expManifest.symbols || expBody.symbols || [])} ·
+              eventos: {String(expBody.n_events)} · stop: {String(expBody.stop_reason)} ·
+              bytes: {String(expBody.bytes_written)}
+            </p>
+            <p>
+              Comparables: {String(expSummary.n_comparable ?? "—")} · rechazados:{" "}
+              {String(expSummary.n_rejected ?? "—")}
+            </p>
+            <p>
+              Diff precio mediana V2−V1:{" "}
+              {fmtNum(
+                ((expSummary.price_diff_v2_minus_v1 as Dict | undefined)?.p50 as number) ?? null,
+                6
+              )}
+            </p>
+            <p className="muted">
+              Liquidez: top-of-book no garantiza; ver by_size en análisis. Sin botón de trading.
+            </p>
+          </>
+        ) : (
+          <p className="muted">
+            Aún sin experimento AM en disco ({String(experiment?.reason || "pendiente")}).
+          </p>
+        )}
+      </section>
+
+      <section className="panel">
+        <h3>Captura experimental (acotada ≤30s UI)</h3>
+        <p className="muted">
+          Plan corto: {String((capturePlan?.plan as Dict | undefined)?.max_seconds ?? "—")}s ·
           est. bytes: {String(disk.estimated_bytes ?? "—")} · 24/7:{" "}
-          {String(capturePlan?.permanent_24_7)} (requiere autorización)
+          {String(capturePlan?.permanent_24_7)} · activa: {String(status?.capture_active)}
         </p>
         {captureRun ? (
           <p>
@@ -265,7 +334,27 @@ export default function ExecutionQualityPage() {
             permanente: {String(captureRun.permanent_service)}
           </p>
         ) : (
-          <p className="muted">Sin captura en esta sesión. No hay gráfico BBO histórico inventado.</p>
+          <p className="muted">Sin captura corta en esta sesión.</p>
+        )}
+      </section>
+
+      <section className="panel">
+        <h3>Lab SELL histórico (solo lectura)</h3>
+        {labAudit?.ok ? (
+          <>
+            <p>
+              Examinados: {String(labAudit.n_sells_examined)} · PROBABLE:{" "}
+              {String(labAudit.n_probable)} · CONFIRMADO: {String(labAudit.n_confirmado)} ·
+              NO_DET: {String(labAudit.n_no_determinable)}
+            </p>
+            <p>
+              Impacto estimado (no aplicado):{" "}
+              {fmtNum(labAudit.estimated_aggregate_undercredit_usdt as number | null, 6)} USDT
+            </p>
+            <p className="muted">Regularización histórica: no ejecutada en AM.</p>
+          </>
+        ) : (
+          <p className="muted">{String(labAudit?.reason || "Sin auditoría Lab")}</p>
         )}
       </section>
 

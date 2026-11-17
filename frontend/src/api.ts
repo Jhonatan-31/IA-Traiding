@@ -676,6 +676,12 @@ export const api = {
     if (!res.ok) throw new Error(`capture-bounded → HTTP ${res.status}`);
     return res.json() as Promise<Record<string, unknown>>;
   },
+  executionQualityAlAnomaly: () =>
+    getJson<Record<string, unknown>>("/api/execution-quality/al-anomaly"),
+  executionQualityExperimentLatest: () =>
+    getJson<Record<string, unknown>>("/api/execution-quality/experiment/latest"),
+  executionQualityLabSellsAudit: () =>
+    getJson<Record<string, unknown>>("/api/execution-quality/lab-sells-audit"),
 };
 
 export function fmtNum(n: number | null | undefined, digits = 4): string {

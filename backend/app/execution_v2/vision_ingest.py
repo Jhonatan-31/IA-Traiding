@@ -27,6 +27,28 @@ VISION_KLINE_FIELDS = (
 )
 
 
+def normalize_vision_open_time_ms(raw_ts: int | float) -> dict[str, Any]:
+    """Binance Vision Spot klines: ms históricamente; microsegundos en datos ≥2025.
+
+    No convierte silenciosamente sin etiquetar la unidad detectada.
+    """
+    ts = int(raw_ts)
+    # Heuristic: ms ~1e12, µs ~1e15 for 2020s timestamps
+    if ts >= 10**14:
+        return {
+            "open_time_ms": ts // 1000,
+            "unit_detected": "microseconds",
+            "raw": ts,
+            "note": "Vision Spot post-2025 may use microseconds; converted to ms for OHLCV join",
+        }
+    return {
+        "open_time_ms": ts,
+        "unit_detected": "milliseconds",
+        "raw": ts,
+        "note": "Assumed milliseconds (classic Vision kline)",
+    }
+
+
 def parse_klines_csv_vision(raw: bytes) -> list[dict[str, Any]]:
     """Parse completo Vision. No inventa campos faltantes."""
     text = raw.decode("utf-8", errors="replace")
@@ -38,8 +60,11 @@ def parse_klines_csv_vision(raw: bytes) -> list[dict[str, Any]]:
         parts = line.split(",")
         if len(parts) < 6:
             continue
+        ts_info = normalize_vision_open_time_ms(float(parts[0]))
         row: dict[str, Any] = {
-            "open_time": int(float(parts[0])),
+            "open_time": ts_info["open_time_ms"],
+            "open_time_unit": ts_info["unit_detected"],
+            "open_time_raw": ts_info["raw"],
             "open": float(parts[1]),
             "high": float(parts[2]),
             "low": float(parts[3]),
