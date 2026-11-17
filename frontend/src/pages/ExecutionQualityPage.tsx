@@ -379,14 +379,14 @@ export default function ExecutionQualityPage() {
             </div>
           </div>
         )}
-        {dual?.ok && (
+        {dual?.ok === true ? (
           <p className="muted">
             Dual REST/WS: REST eventos{" "}
             {String(((dual.experiment as Dict)?.rest as Dict | undefined)?.n_events)} · WS{" "}
             {String(((dual.experiment as Dict)?.ws as Dict | undefined)?.n_events)} · rate{" "}
             {String(((dual.experiment as Dict)?.ws as Dict | undefined)?.msg_rate)}
           </p>
-        )}
+        ) : null}
       </section>
 
       <section className="panel">
