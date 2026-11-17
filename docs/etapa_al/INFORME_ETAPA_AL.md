@@ -29,8 +29,12 @@ No está validado para reemplazar motores paper ni migrar carteras: falta profun
 
 - Módulo `compare_experiment` + API `compare-once`.
 - Sin BBO → `NO_COMPARABLE` (sin sustitución silenciosa).
-- Observaciones de mediana: solo las generadas en sesión/API; este informe **no inventa N**.
-- Peor precio V2 ≠ prueba de superioridad económica.
+- Observación post-deploy EBZ (BUY 0.001 BTCUSDT, 2026-11-17):
+  - comparable: **1**
+  - precio V1 ≈ 64159.14 · V2 all-in ≈ 64095.06
+  - no comparable en esa corrida: **0**
+  - N total de esta verificación: **1** (no inventar series)
+- Peor/mejor precio V2 ≠ prueba automática de superioridad económica.
 
 ## E. DATOS HISTÓRICOS (Vision)
 
@@ -46,16 +50,17 @@ No está validado para reemplazar motores paper ni migrar carteras: falta profun
 
 ## G. OPERACIÓN
 
-- A/B STOPPED · PAPER_ONLY · PAPER_AI OFF · AB-PROSPECT PREPARED_DISABLED.
-- V2 no muta ledgers · sin órdenes reales · sin claves privadas Binance.
-- EBZ: verificar carrier Ethernet en despliegue; NO-CARRIER histórico no se asume vigente sin lectura actual.
-- Consultate / EVS no tocados.
+- demo=STOPPED · active=STOPPED · PAPER_ONLY · V2 no muta ledgers.
+- EBZ 2026-11-17 post-deploy: `eno1` DOWN **NO-CARRIER**; `wlp7s0` UP · IP `192.168.1.12` · gateway `192.168.1.254`.
+- market-stream healthy · API healthy · BBO refresh público OK.
+- Consultate / EVS intactos (Up ~21h).
+- Backups pre-AL: `paper_ebz_20261117_201956` (y `201611`).
 
 ## H. ENTREGA
 
 | Artefacto | Valor |
 |-----------|--------|
-| Commit | `f98d530` |
+| Commit | `762d1de` (docs) / `f98d530` (código AL) |
 | Pre-tag | `checkpoint-etapa-al-pre-20261117_152000` |
 | Tag final | `checkpoint-etapa-al` |
 | Rollback | `git checkout checkpoint-etapa-al-pre-20261117_152000` (código); no `down -v` |
