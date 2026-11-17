@@ -142,6 +142,13 @@ def audit_lab_sells_readonly(
     period = None
     if rows:
         period = {"from": str(rows[0].get("at")), "to": str(rows[-1].get("at"))}
+    missing_for_confirm = [
+        "cash_before per trade",
+        "cash_after per trade",
+        "executor_code_version / deploy commit at fill time",
+        "explicit fill_price_is_all_in flag persisted on row",
+        "fee currency (assumed quote USDT)",
+    ]
     return {
         "readonly": True,
         "mutates_ledgers": False,
@@ -149,16 +156,23 @@ def audit_lab_sells_readonly(
         "n_sells_examined": len(rows),
         "n_confirmado": confirmed,
         "n_probable": probable,
+        "n_descartado": 0,
         "n_no_determinable": undetermined,
         "accounts": accounts,
         "period": period,
         "estimated_aggregate_undercredit_usdt": float(impact_sum) if impact_n else None,
         "impact_rows_with_estimate": impact_n,
+        "impact_uncertain_usdt": float(impact_sum) if impact_n else None,
         "assume_all_in_v1": assume_all_in_v1,
+        "code_dependency": (
+            "Pre-AL apply_sell debited fee after all-in credit when fill_price from "
+            "estimate_fill_price; AL fixed forward only."
+        ),
+        "missing_to_upgrade_probable_to_confirmado": missing_for_confirm,
         "limitations": [
             "Sin snapshot cash por trade, el impacto es estimado",
-            "No se reescriben fills ni saldos en AM",
-            "CONFIRMADO requiere convención all-in documentada (Lab usa estimate_fill_price)",
+            "No se reescriben fills ni saldos",
+            "CONFIRMADO requiere trail de efectivo o flag persistido — no disponible",
         ],
         "proposed_regularization": {
             "steps": [
@@ -168,6 +182,7 @@ def audit_lab_sells_readonly(
                 "Documentar hash del export y aprobación",
             ],
             "authorized_in_am": False,
+            "authorized_in_an": False,
         },
         "findings_sample": findings[:20],
         "findings_count": len(findings),

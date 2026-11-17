@@ -14,13 +14,17 @@ export default function ExecutionQualityPage() {
   const [anomaly, setAnomaly] = useState<Dict | null>(null);
   const [experiment, setExperiment] = useState<Dict | null>(null);
   const [labAudit, setLabAudit] = useState<Dict | null>(null);
+  const [fair, setFair] = useState<Dict | null>(null);
+  const [fairOnce, setFairOnce] = useState<Dict | null>(null);
+  const [dual, setDual] = useState<Dict | null>(null);
+  const [fairFilter, setFairFilter] = useState("BTCUSDT|BUY");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
   async function load() {
     setError(null);
     try {
-      const [s, c, a, plan, anom, exp, lab] = await Promise.all([
+      const [s, c, a, plan, anom, exp, lab, dualL] = await Promise.all([
         api.executionQualityStatus(),
         api.executionQualityD28Costs(),
         api.executionQualityAudit(),
@@ -28,6 +32,7 @@ export default function ExecutionQualityPage() {
         api.executionQualityAlAnomaly(),
         api.executionQualityExperimentLatest(),
         api.executionQualityLabSellsAudit(),
+        api.executionQualityDualLatest(),
       ]);
       setStatus(s);
       setCosts(c);
@@ -36,6 +41,7 @@ export default function ExecutionQualityPage() {
       setAnomaly(anom);
       setExperiment(exp);
       setLabAudit(lab);
+      setDual(dualL);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Error");
     }
@@ -96,6 +102,36 @@ export default function ExecutionQualityPage() {
     }
   }
 
+  async function loadFair() {
+    setBusy(true);
+    setError(null);
+    try {
+      const out = await api.executionQualityFairCompare("am");
+      setFair(out);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Error");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function runFairOnce() {
+    setBusy(true);
+    setError(null);
+    try {
+      const out = await api.executionQualityCompareFairOnce({
+        side: "BUY",
+        qty: 0.001,
+        symbol: "BTCUSDT",
+      });
+      setFairOnce(out);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Error");
+    } finally {
+      setBusy(false);
+    }
+  }
+
   const bbo = (status?.bbo as Dict | undefined) || {};
   const quotes = (bbo.quotes as Record<string, Dict> | undefined) || {};
   const reported = (costs?.reported as Dict | undefined) || {};
@@ -129,6 +165,12 @@ export default function ExecutionQualityPage() {
           </button>
           <button className="btn" disabled={busy} onClick={() => void runBoundedCapture()}>
             Captura acotada 5s
+          </button>
+          <button className="btn" disabled={busy} onClick={() => void loadFair()}>
+            Fair-compare AM
+          </button>
+          <button className="btn" disabled={busy} onClick={() => void runFairOnce()}>
+            LEGACY+MATCHED once
           </button>
         </div>
       </div>
@@ -261,6 +303,89 @@ export default function ExecutionQualityPage() {
             </p>
             <p className="muted">{String(obs.accounting_note || summary.interpretation || "")}</p>
           </>
+        )}
+      </section>
+
+      <section className="panel">
+        <h3>Comparación económica justa V1 / V2</h3>
+        <p className="muted">
+          Modos LEGACY (defaults) y MATCHED (fee+slip iguales; aísla mid→touch). No es
+          rentabilidad. Ventana corta ≠ todos los regímenes. Sin controles de trading.
+        </p>
+        <p>
+          Filtro grupo:{" "}
+          <select value={fairFilter} onChange={(e) => setFairFilter(e.target.value)}>
+            {["BTCUSDT|BUY", "BTCUSDT|SELL", "ETHUSDT|BUY", "ETHUSDT|SELL", "SOLUSDT|BUY", "SOLUSDT|SELL"].map(
+              (k) => (
+                <option key={k} value={k}>
+                  {k}
+                </option>
+              )
+            )}
+          </select>
+        </p>
+        {fair?.ok ? (
+          <>
+            <p className="muted">
+              Independencia:{" "}
+              {String(
+                ((fair.analysis as Dict)?.independence as Dict | undefined)?.note || ""
+              )}
+            </p>
+            {(["legacy", "matched"] as const).map((mode) => {
+              const block = ((fair.analysis as Dict)?.[mode] as Dict) || {};
+              const grp =
+                ((block.by_symbol_side as Record<string, Dict> | undefined) || {})[fairFilter] ||
+                {};
+              const diff = (grp.diff_bps as Dict | undefined) || {};
+              return (
+                <div key={mode}>
+                  <h4>{mode.toUpperCase()}</h4>
+                  <p>
+                    Filas derivadas: {String(block.n_comparable)} · buckets únicos grupo:{" "}
+                    {String(grp.n_unique_buckets ?? "—")} · mediana diff bps:{" "}
+                    {fmtNum(diff.p50 as number | null, 4)} · incompletos L2:{" "}
+                    {String(grp.n_incomplete_l2 ?? "—")}
+                  </p>
+                </div>
+              );
+            })}
+          </>
+        ) : (
+          <p className="muted">Cargue fair-compare AM (dataset en disco) o espere captura AN.</p>
+        )}
+        {fairOnce && (
+          <div className="grid-2">
+            <div>
+              <h4>LEGACY once</h4>
+              <p>
+                Δ precio:{" "}
+                {fmtNum(
+                  ((fairOnce.legacy as Dict | undefined)?.price_diff_v2_minus_v1_signed as number) ??
+                    null,
+                  4
+                )}
+              </p>
+            </div>
+            <div>
+              <h4>MATCHED once</h4>
+              <p>
+                Δ bps:{" "}
+                {fmtNum(((fairOnce.matched as Dict | undefined)?.diff_bps_vs_mid as number) ?? null, 4)}
+              </p>
+              <p className="muted">
+                {String(((fairOnce.matched as Dict | undefined)?.cause as string) || "")}
+              </p>
+            </div>
+          </div>
+        )}
+        {dual?.ok && (
+          <p className="muted">
+            Dual REST/WS: REST eventos{" "}
+            {String(((dual.experiment as Dict)?.rest as Dict | undefined)?.n_events)} · WS{" "}
+            {String(((dual.experiment as Dict)?.ws as Dict | undefined)?.n_events)} · rate{" "}
+            {String(((dual.experiment as Dict)?.ws as Dict | undefined)?.msg_rate)}
+          </p>
         )}
       </section>
 

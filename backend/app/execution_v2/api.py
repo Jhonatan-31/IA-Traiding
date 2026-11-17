@@ -324,7 +324,7 @@ async def experiment_latest():
 
 @router.get("/lab-sells-audit")
 async def lab_sells_audit():
-    """AM8 — solo lectura. No regulariza."""
+    """AM8/AN7 — solo lectura. No regulariza."""
     import psycopg
     from psycopg.rows import dict_row
 
@@ -341,3 +341,101 @@ async def lab_sells_audit():
             report = audit_lab_sells_readonly(execute)
     report["ok"] = True
     return report
+
+
+ETAPA_AN_DIR = Path(os.environ.get("MARKET_HISTORY_DIR", "/artifacts/history")) / "etapa_an"
+
+
+@router.get("/cost-contract")
+async def cost_contract():
+    from .cost_contract import CONTRACT_SPEC
+
+    return CONTRACT_SPEC
+
+
+@router.get("/am-audit")
+async def am_audit_endpoint():
+    """AN0 — relee dataset AM si existe en disco; no lo modifica."""
+    from .am_audit import audit_am_dataset
+
+    jsonl = ETAPA_AM_DIR / "bbo_capture_1794948090084.jsonl"
+    man = ETAPA_AM_DIR / "bbo_capture_1794948090084.manifest.json"
+    if not jsonl.exists():
+        # fallback: docs copy not on server path — try glob
+        cands = list(ETAPA_AM_DIR.glob("bbo_capture_*.jsonl"))
+        if not cands:
+            return {"ok": False, "reason": "am_dataset_missing", "dir": str(ETAPA_AM_DIR)}
+        jsonl = cands[0]
+        man = jsonl.with_suffix(".manifest.json")
+    return {"ok": True, **audit_am_dataset(jsonl, man if man.exists() else None)}
+
+
+@router.get("/fair-compare")
+async def fair_compare_endpoint(
+    source: str = Query(default="am"),
+):
+    """LEGACY + MATCHED sobre dataset AM o AN. Solo lectura."""
+    from .fair_compare import run_fair_analysis
+
+    if source not in ("am", "an-rest", "an-ws"):
+        raise HTTPException(status_code=400, detail="source must be am|an-rest|an-ws")
+    if source == "am":
+        base = ETAPA_AM_DIR
+        cands = list(base.glob("bbo_capture_*.jsonl"))
+    elif source == "an-rest":
+        base = ETAPA_AN_DIR / "rest"
+        cands = list(base.glob("bbo_capture_*.jsonl"))
+    else:
+        base = ETAPA_AN_DIR / "ws"
+        cands = list(base.glob("bbo_ws_*.jsonl"))
+    if not cands:
+        return {"ok": False, "reason": "dataset_missing", "source": source, "dir": str(base)}
+    path = sorted(cands)[-1]
+    analysis = run_fair_analysis(load_jsonl(path))
+    out_path = ETAPA_AN_DIR / f"fair_{source.replace('-', '_')}.json"
+    ETAPA_AN_DIR.mkdir(parents=True, exist_ok=True)
+    import json
+
+    out_path.write_text(json.dumps(analysis, indent=2, ensure_ascii=False), encoding="utf-8")
+    return {
+        "ok": True,
+        "source": source,
+        "dataset": str(path),
+        "analysis": analysis,
+        "saved": str(out_path),
+    }
+
+
+@router.get("/dual-experiment/latest")
+async def dual_experiment_latest():
+    path = ETAPA_AN_DIR / "last_dual_experiment.json"
+    if not path.exists():
+        return {"ok": False, "reason": "no_dual_experiment_yet", "dir": str(ETAPA_AN_DIR)}
+    import json
+
+    return {"ok": True, "experiment": json.loads(path.read_text(encoding="utf-8"))}
+
+
+@router.post("/compare-fair-once")
+async def compare_fair_once(body: CompareBody):
+    """Una decisión: LEGACY + MATCHED contemporáneos. Sin órdenes."""
+    from .fair_compare import evaluate_legacy, evaluate_matched
+
+    await refresh_book_ticker([body.symbol.upper()])
+    reg = get_registry()
+    bbo = reg.get(body.symbol)
+    if bbo is None:
+        return {"comparable": False, "reason": "missing_bbo"}
+    mid = float(body.ref_mid) if body.ref_mid is not None else bbo.mid
+    now = int(time.time() * 1000)
+    return {
+        "legacy": evaluate_legacy(
+            side=body.side, qty=body.qty, mid=mid, bbo=bbo, now_ms=now
+        ),
+        "matched": evaluate_matched(side=body.side, qty=body.qty, mid=mid, bbo=bbo),
+        "labels": {
+            "LEGACY": "defaults V1 vs V2 as deployed",
+            "MATCHED": "same fee+slip; isolates mid→touch BBO",
+            "paper_or_real": "NONE",
+        },
+    }

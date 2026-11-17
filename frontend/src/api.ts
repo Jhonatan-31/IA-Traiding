@@ -682,6 +682,31 @@ export const api = {
     getJson<Record<string, unknown>>("/api/execution-quality/experiment/latest"),
   executionQualityLabSellsAudit: () =>
     getJson<Record<string, unknown>>("/api/execution-quality/lab-sells-audit"),
+  executionQualityCostContract: () =>
+    getJson<Record<string, unknown>>("/api/execution-quality/cost-contract"),
+  executionQualityAmAudit: () =>
+    getJson<Record<string, unknown>>("/api/execution-quality/am-audit"),
+  executionQualityFairCompare: (source: "am" | "an-rest" | "an-ws" = "am") =>
+    getJson<Record<string, unknown>>(
+      `/api/execution-quality/fair-compare?source=${encodeURIComponent(source)}`
+    ),
+  executionQualityDualLatest: () =>
+    getJson<Record<string, unknown>>("/api/execution-quality/dual-experiment/latest"),
+  executionQualityCompareFairOnce: async (body: {
+    side: string;
+    qty: number;
+    symbol?: string;
+    ref_mid?: number | null;
+  }) => {
+    const res = await fetch("/api/execution-quality/compare-fair-once", {
+      method: "POST",
+      credentials: "include",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    if (!res.ok) throw new Error(`compare-fair-once → HTTP ${res.status}`);
+    return res.json() as Promise<Record<string, unknown>>;
+  },
 };
 
 export function fmtNum(n: number | null | undefined, digits = 4): string {
