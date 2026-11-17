@@ -55,8 +55,10 @@ No está validado para reemplazar motores paper ni migrar carteras: falta profun
 
 | Artefacto | Valor |
 |-----------|--------|
+| Commit | `f98d530` |
 | Pre-tag | `checkpoint-etapa-al-pre-20261117_152000` |
-| Tag final | `checkpoint-etapa-al` (al cerrar) |
+| Tag final | `checkpoint-etapa-al` |
+| Rollback | `git checkout checkpoint-etapa-al-pre-20261117_152000` (código); no `down -v` |
 | Dashboard | `/calidad-ejecucion` ampliado |
 | API | compare-once, capture/plan, capture/run-bounded, audit lab note |
 | Tests | `test_etapa_al*.py` + regresiones AK |
