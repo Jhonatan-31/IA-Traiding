@@ -1,0 +1,30 @@
+{
+  "experiment_id": "AM-BBO-1794948090",
+  "started_at_ms": 1794948090084,
+  "ended_at_ms": 1794948691148,
+  "duration_ms": 601064,
+  "symbols": [
+    "BTCUSDT",
+    "ETHUSDT",
+    "SOLUSDT"
+  ],
+  "commit": "7f88c0843d21712d4bca147732a6a08560333351",
+  "parser_version": "am_bbo_jsonl_v1",
+  "limits": {
+    "max_seconds": 600.0,
+    "max_events": 910,
+    "max_bytes": 52428800,
+    "poll_interval_s": 2.0
+  },
+  "n_events": 468,
+  "n_duplicates": 0,
+  "n_invalid": 0,
+  "n_gaps_heuristic": 432,
+  "n_errors": 0,
+  "bytes_written": 328030,
+  "stop_reason": "max_seconds",
+  "authorized": true,
+  "permanent_service": false,
+  "path": "/artifacts/history/etapa_am/bbo_capture_1794948090084.jsonl",
+  "polls": 156
+}
